@@ -1,0 +1,27 @@
+# Environnement virtuel
+venv/
+BackendLetsgo/venv/
+
+# Variables d'environnement
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Django
+db.sqlite3
+media/
+
+# IDE
+.vscode/
+.idea/
+
+# Système
+.DS_Store
+Thumbs.db
+
+# Frontend
+FrontLetsgo/node_modules/
+FrontLetsgo/dist/
