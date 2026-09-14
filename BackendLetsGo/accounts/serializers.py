@@ -28,8 +28,20 @@ class RegisterSerializer(serializers.ModelSerializer):
         return user
 
 
+# class UserProfileSerializer(serializers.ModelSerializer):
+#         class Meta:
+#              model = User
+#              fields = ('id', 'first_name', 'last_name', 'email', 'telephone', 'role')
+#              read_only_fields = ('id', 'role')  # L'utilisateur peut modifier nom, prénom, email et téléphone, mais PAS son rôle ni son id
+
 class UserProfileSerializer(serializers.ModelSerializer):
-        class Meta:
-             model = User
-             fields = ('id', 'first_name', 'last_name', 'email', 'telephone', 'role')
-             read_only_fields = ('id', 'role')  # L'utilisateur peut modifier nom, prénom, email et téléphone, mais PAS son rôle ni son id
+    is_profile_complete = serializers.ReadOnlyField()  # Champ calculé (read-only)
+
+    class Meta:
+        model = User
+        fields = (
+            'id', 'first_name', 'last_name', 'email', 
+            'telephone', 'role', 'is_verified', 
+            'is_profile_complete', 'permis_conduire', 'carte_grise', 'assurance', 'photo'
+        )
+        read_only_fields = ('id', 'role', 'is_verified', 'is_profile_complete')             
