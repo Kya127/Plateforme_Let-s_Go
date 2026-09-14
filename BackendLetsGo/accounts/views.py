@@ -1,7 +1,8 @@
 from rest_framework import generics, status
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
-from .serializers import RegisterSerializer
+from .serializers import RegisterSerializer, UserProfileSerializer
+# from .serializers import UserProfileSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 
 
@@ -39,3 +40,13 @@ class LogoutView(generics.GenericAPIView):
             return Response({"message": "Déconnexion réussie !"}, status=status.HTTP_205_RESET_CONTENT)
         except Exception:
             return Response({"error": "Token invalide ou déjà expiré."}, status=status.HTTP_400_BAD_REQUEST)
+
+
+
+class UserProfileView(generics.RetrieveUpdateAPIView):
+    serializer_class = UserProfileSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_object(self):
+        # Renvoie automatiquement l'utilisateur qui a émis la requête avec son Token JWT
+        return self.request.user        

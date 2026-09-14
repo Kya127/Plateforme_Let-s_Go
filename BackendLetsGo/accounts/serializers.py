@@ -13,7 +13,7 @@ class RegisterSerializer(serializers.ModelSerializer):
         fields = ('id', 'first_name', 'last_name', 'email', 'telephone', 'password', 'role')
         read_only_fields = ('role',)
 
-        
+
     def create(self, validated_data):
         # Utilisation de create_user pour hacher automatiquement le mot de passe
         user = User.objects.create_user(
@@ -26,3 +26,10 @@ class RegisterSerializer(serializers.ModelSerializer):
             role=User.Role.PASSAGER
         )
         return user
+
+
+class UserProfileSerializer(serializers.ModelSerializer):
+        class Meta:
+             model = User
+             fields = ('id', 'first_name', 'last_name', 'email', 'telephone', 'role')
+             read_only_fields = ('id', 'role')  # L'utilisateur peut modifier nom, prénom, email et téléphone, mais PAS son rôle ni son id
