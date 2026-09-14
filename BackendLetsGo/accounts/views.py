@@ -1,7 +1,9 @@
 from rest_framework import generics, status
 from rest_framework.response import Response
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from .serializers import RegisterSerializer
+from rest_framework_simplejwt.tokens import RefreshToken
+
 
 class RegisterView(generics.CreateAPIView):
     serializer_class = RegisterSerializer
@@ -21,3 +23,19 @@ class RegisterView(generics.CreateAPIView):
             },
             "message": "Compte créé avec succès !"
         }, status=status.HTTP_201_CREATED)
+
+
+
+
+
+class LogoutView(generics.GenericAPIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        try:
+            refresh_token = request.data["refresh"]
+            token = RefreshToken(refresh_token)
+            token.blacklist() # Invalide le refresh token
+            return Response({"message": "Déconnexion réussie !"}, status=status.HTTP_205_RESET_CONTENT)
+        except Exception:
+            return Response({"error": "Token invalide ou déjà expiré."}, status=status.HTTP_400_BAD_REQUEST)
