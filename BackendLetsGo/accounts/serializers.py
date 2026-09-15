@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import User
+from .models import User, VerificationDocument
 
 class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(
@@ -42,6 +42,38 @@ class UserProfileSerializer(serializers.ModelSerializer):
         fields = (
             'id', 'first_name', 'last_name', 'email', 
             'telephone', 'role', 'is_verified', 
-            'is_profile_complete', 'permis_conduire', 'carte_grise', 'assurance', 'photo'
+            'is_profile_complete', 'photo'
         )
-        read_only_fields = ('id', 'role', 'is_verified', 'is_profile_complete')             
+        read_only_fields = ('id', 'role', 'is_profile_complete')             
+
+
+
+class BecomeDriverSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = VerificationDocument
+        fields = ('permis_conduire', 'carte_grise', 'assurance')
+        extra_kwargs = {
+            'permis_conduire': {
+                'required': True,
+                'error_messages': {'required': 'Le permis de conduire est obligatoire.'}
+            },
+            'carte_grise': {
+                'required': True,
+                'error_messages': {'required': 'La carte grise du véhicule est obligatoire.'}
+            },
+            'assurance': {
+                'required': True,
+                'error_messages': {'required': 'L\'attestation d\'assurance est obligatoire.'}
+            },
+        }
+
+    def validate(self, attrs):
+        user = self.context['request'].user
+        
+        # Exiger qu'une photo de profil soit présente sur le compte User
+        if not user.photo:
+            raise serializers.ValidationError({
+                "photo": "Vous devez d'abord ajouter une photo de profil à votre compte."
+            })
+            
+        return attrs
