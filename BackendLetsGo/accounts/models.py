@@ -24,8 +24,20 @@ class User(AbstractUser):
 
     @property
     def is_profile_complete(self):
-        """Vérifie si les informations de base sont renseignées."""
-        return bool(self.first_name and self.last_name and self.telephone and self.email)
+            # 1. Vérification de base pour tout le monde (Passager & Conducteur)
+            base_complete = bool(self.first_name and self.last_name and self.telephone and self.email)
+            
+            # 2. Si l'utilisateur est Conducteur (ou demande à le devenir), il faut TOUS les documents
+            if self.role == self.Role.CONDUCTEUR:
+                return base_complete and bool(self.permis_conduire and self.carte_grise and self.assurance and self.photo)
+            
+            # 3. Pour un Passager, la base suffit
+            return base_complete
+
+    
+    #     """Vérifie si les informations de base sont renseignées."""
+    #     return bool(self.first_name and self.last_name and self.telephone and self.email)
 
     def __str__(self):
-        return f"{self.first_name} {self.last_name} ({self.role})"
+         return f"{self.first_name} {self.last_name} ({self.role})"
+
