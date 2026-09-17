@@ -34,6 +34,7 @@ urlpatterns = [
     path('api/auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('api/voitures/', include('voitures.urls')),
     path('api/trajets/', include('trajets.urls')),
+    path('api/reservations/', include('reservations.urls')),
 
     # Documentation Swagger / OpenAPI
     path('api/schema/', SpectacularAPIView.as_view(), name='schema'),

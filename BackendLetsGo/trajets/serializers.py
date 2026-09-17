@@ -3,6 +3,8 @@ from .models import Trajet
 from voitures.models import Voiture
 
 class TrajetSerializer(serializers.ModelSerializer):
+
+    preferences = serializers.MultipleChoiceField(choices=Trajet.CLASS_PREFERENCES, required=False)
     class Meta:
         model = Trajet
         fields = (
@@ -16,6 +18,7 @@ class TrajetSerializer(serializers.ModelSerializer):
             'prix_par_place', 
             'description', 
             'statut', 
+            'preferences',
             'created_at'
         )
         read_only_fields = ('id', 'conducteur', 'statut', 'created_at')
@@ -44,3 +47,32 @@ class TrajetSerializer(serializers.ModelSerializer):
             })
 
         return attrs
+
+
+
+
+class TrajetDetailSerializer(serializers.ModelSerializer):
+    conducteur_nom = serializers.CharField(source='conducteur.get_full_name', read_only=True)
+    voiture_info = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Trajet
+        fields = (
+            'id', 
+            'conducteur', 
+            'conducteur_nom',
+            'voiture_info', 
+            'lieu_depart', 
+            'lieu_arrivee', 
+            'date_depart', 
+            'heure_depart', 
+            'nombre_de_place', 
+            'prix_par_place', 
+            'description', 
+            'preferences',
+            'statut'
+        )
+
+    def get_voiture_info(self, obj):
+        return f"{obj.voiture.marque_voiture} {obj.voiture.model_voiture} {obj.voiture.couleur} ({obj.voiture.plaque})"
+    
