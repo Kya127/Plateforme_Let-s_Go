@@ -35,6 +35,7 @@ urlpatterns = [
     path('api/voitures/', include('voitures.urls')),
     path('api/trajets/', include('trajets.urls')),
     path('api/reservations/', include('reservations.urls')),
+    path('api/avis/', include('evaluations.urls')),
 
     # Documentation Swagger / OpenAPI
     path('api/schema/', SpectacularAPIView.as_view(), name='schema'),

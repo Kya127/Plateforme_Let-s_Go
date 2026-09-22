@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     'voitures',
     'trajets',
     'reservations',
+    'evaluations',
     'drf_spectacular',
     'django_filters',
     'rest_framework_simplejwt.token_blacklist',
