@@ -42,16 +42,15 @@ class UserProfileSerializer(serializers.ModelSerializer):
         fields = (
             'id', 'first_name', 'last_name', 'email', 
             'telephone', 'role', 'is_verified', 
-            'is_profile_complete', 'photo'
+            'is_profile_complete', 'photo', 'fcm_token'
         )
         read_only_fields = ('id', 'role', 'is_profile_complete')             
-
 
 
 class BecomeDriverSerializer(serializers.ModelSerializer):
     class Meta:
         model = VerificationDocument
-        fields = ('permis_conduire', 'carte_grise', 'assurance')
+        fields = ('permis_conduire', 'carte_grise', 'assurance', 'photo_vehicule')
         extra_kwargs = {
             'permis_conduire': {
                 'required': True,
@@ -65,15 +64,16 @@ class BecomeDriverSerializer(serializers.ModelSerializer):
                 'required': True,
                 'error_messages': {'required': 'L\'attestation d\'assurance est obligatoire.'}
             },
+            'photo_vehicule': {
+                'required': True,
+                'error_messages': {'required': 'La photo du véhicule est obligatoire.'}
+            },
         }
 
     def validate(self, attrs):
         user = self.context['request'].user
-        
-        # Exiger qu'une photo de profil soit présente sur le compte User
         if not user.photo:
             raise serializers.ValidationError({
                 "photo": "Vous devez d'abord ajouter une photo de profil à votre compte."
             })
-            
         return attrs
