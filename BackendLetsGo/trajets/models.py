@@ -41,11 +41,11 @@ class Trajet(models.Model):
 
 
     def reserver_places(self, nombre):
-        if nombre > self.nombre_de_place:
+        if nombre > self.places_disponibles:
             raise ValueError("Nombre de places insuffisant.")
-        self.nombre_de_place -= nombre
+        self.places_disponibles -= nombre
         self.save()
 
     def liberer_places(self, nombre):
-        self.nombre_de_place += nombre
+        self.places_disponibles += nombre
         self.save()

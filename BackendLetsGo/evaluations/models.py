@@ -5,23 +5,11 @@ from trajets.models import Trajet
 
 
 class Evaluation(models.Model):
-    trajet = models.ForeignKey(
-        Trajet, on_delete=models.CASCADE, related_name="evaluations"
-    )
-    auteur = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
-        related_name="evaluations_donnees",
-    )
+    trajet = models.ForeignKey(Trajet, on_delete=models.CASCADE, related_name="evaluations")
+    auteur = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE,related_name="evaluations_donnees",)
     destinataire = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
-        related_name="evaluations_recues",
-    )
-
-    note = models.PositiveSmallIntegerField(
-        validators=[MinValueValidator(1), MaxValueValidator(5)]
-    )
+    settings.AUTH_USER_MODEL,on_delete=models.CASCADE,related_name="evaluations_recues",)
+    note = models.PositiveSmallIntegerField(validators=[MinValueValidator(1), MaxValueValidator(5)])
     commentaire = models.TextField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
 

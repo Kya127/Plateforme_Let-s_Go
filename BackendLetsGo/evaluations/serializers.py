@@ -5,9 +5,7 @@ from .models import Evaluation
 
 class EvaluationSerializer(serializers.ModelSerializer):
     nom_auteur = serializers.ReadOnlyField(source="auteur.first_name")
-    nom_destinataire = serializers.ReadOnlyField(
-        source="destinataire.first_name"
-    )
+    nom_destinataire = serializers.ReadOnlyField(source="destinataire.first_name")
 
     class Meta:
         model = Evaluation
@@ -48,9 +46,7 @@ class EvaluationSerializer(serializers.ModelSerializer):
 
         # 3. Vérification de la participation de l'auteur et du destinataire
         is_user_conducteur = trajet.conducteur == user
-        is_user_passager = trajet.reservations.filter(
-            passager=user, statut="CONFIRMEE"
-        ).exists()
+        is_user_passager = trajet.reservations.filter(passager=user, statut="CONFIRMEE").exists()
 
         if not (is_user_conducteur or is_user_passager):
             raise serializers.ValidationError(
@@ -58,9 +54,7 @@ class EvaluationSerializer(serializers.ModelSerializer):
             )
 
         is_dest_conducteur = trajet.conducteur == destinataire
-        is_dest_passager = trajet.reservations.filter(
-            passager=destinataire, statut="CONFIRMEE"
-        ).exists()
+        is_dest_passager = trajet.reservations.filter(passager=destinataire, statut="CONFIRMEE").exists()
 
         if not (is_dest_conducteur or is_dest_passager):
             raise serializers.ValidationError(

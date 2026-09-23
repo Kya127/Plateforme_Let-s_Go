@@ -14,6 +14,7 @@ class VerificationDocumentAdmin(admin.ModelAdmin):
         'permis_conduire', 
         'carte_grise', 
         'assurance', 
+        'photo_vehicule',
         'motif_rejet', 
         'created_at', 
         'updated_at'
