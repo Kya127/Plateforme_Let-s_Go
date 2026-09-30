@@ -1,621 +1,299 @@
 <script setup>
-import { reactive, ref, computed } from 'vue'
+import { reactive, ref, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthentificationStore } from '@/stores/authentification'
+import { serviceTrajets, serviceReservations } from '@/services/api'
+import BarreNavigation from '@/components/layout/BarreNavigation.vue'
+import RechercheUnifieeDesktop from '@/components/accueil/RechercheUnifieeDesktop.vue'
+import CarteRechercheMobile from '@/components/accueil/CarteRechercheMobile.vue'
 import CarteTrajet from '@/components/accueil/CarteTrajet.vue'
 import CarrouselVehicules from '@/components/accueil/CarrouselVehicules.vue'
 import PiedDePage from '@/components/layout/PiedDePage.vue'
-import BoutonBase from '@/components/common/BoutonBase.vue'
-import BadgeTrajetPublie from '@/components/common/BadgeTrajetPublie.vue'
+import ModalReservationEnCours from '@/components/passager/ModalReservationEnCours.vue'
 
 const routeur = useRouter()
 const storeAuth = useAuthentificationStore()
 
 /* =========================================================
-   TRAJET PUBLIÉ DU CONDUCTEUR
-   Temporaire pour l'intégration UI.
-   Sera remplacé par les données Django / DRF.
+   DATE D'AUJOURD'HUI (YYYY-MM-DD)
 ========================================================= */
-
-const trajetPublie = ref({
-  id: 1,
-
-  heure:
-    '08:30',
-
-  destination:
-    'Ouakam',
-
-  depart:
-    'Keur Massar'
-})
-// Initialisation de la date d'aujourd'hui au format YYYY-MM-DD
 const aujourdhui = new Date().toISOString().split('T')[0]
 
+/* =========================================================
+   TRAJETS DISPONIBLES (BDD)
+========================================================= */
+const trajetsDisponibles = ref([])
+const chargementTrajets = ref(false)
+
+async function chargerTrajetsDisponibles() {
+  chargementTrajets.value = true
+  try {
+    const data = await serviceTrajets.lister({ statut: 'PLANIFIE' })
+    const liste = Array.isArray(data) ? data : (data.results || [])
+    trajetsDisponibles.value = liste.filter(t => (t.places_disponibles ?? 0) >= 1 && (!t.date || t.date >= aujourdhui))
+  } catch (err) {
+    console.warn('Erreur chargement des trajets disponibles BDD:', err)
+    trajetsDisponibles.value = []
+  } finally {
+    chargementTrajets.value = false
+  }
+}
+
+/* =========================================================
+   RÉSERVATION ACTIVE DU PASSAGER (BDD DYNAMIQUE)
+========================================================= */
+const reservationActive = ref(null)
+const mesReservationsTrajetIds = ref(new Set())
+
+function estTrajetReserve(t) {
+  if (!storeAuth.estConnecte || !t) return false
+  if (t.est_deja_reserve) return true
+  return mesReservationsTrajetIds.value.has(Number(t.id))
+}
+
+async function chargerReservationActive() {
+  if (!storeAuth.estConnecte) {
+    reservationActive.value = null
+    mesReservationsTrajetIds.value = new Set()
+    return
+  }
+
+  try {
+    const resData = await serviceReservations.lister()
+    const liste = Array.isArray(resData) ? resData : (resData.results || [])
+
+    const ids = new Set()
+    liste.forEach(r => {
+      if (r.statut === 'CONFIRMEE') {
+        const tId = r.trajet || r.trajet_id || r.trajet_details?.id
+        if (tId) ids.add(Number(tId))
+      }
+    })
+    mesReservationsTrajetIds.value = ids
+
+    const active = liste.find(r => 
+      r.statut === 'CONFIRMEE' && 
+      r.trajet_details && 
+      (!r.trajet_details.date || r.trajet_details.date >= aujourdhui) &&
+      r.trajet_details.statut !== 'ANNULE'
+    )
+
+    if (active && active.trajet_details) {
+      const td = active.trajet_details
+      reservationActive.value = {
+        id: active.id,
+        depart: td.lieu_depart,
+        arrivee: td.destination,
+        arriveeDetail: td.destination,
+        dateComplete: `${td.date} à ${td.heure_depart ? td.heure_depart.substring(0, 5) : '08:00'}`,
+        passagers: `${active.nombre_de_places} Place${active.nombre_de_places > 1 ? 's' : ''}`,
+        prixTotal: Number(td.prix_par_place || 0) * (active.nombre_de_places || 1),
+        conducteur: {
+          nom: td.conducteur_nom || 'Conducteur',
+          voiture: td.voiture_info ? `${td.voiture_info.brand || ''} ${td.voiture_info.model || ''}`.trim() : 'Véhicule standard',
+          plaque: td.voiture_info?.plate || 'DK-LET-GO',
+          note: String(td.conducteur_note || '4.9'),
+          telephone: td.conducteur_telephone || '',
+          photo: td.conducteur_photo || ''
+        }
+      }
+    } else {
+      reservationActive.value = null
+    }
+  } catch (err) {
+    console.warn('Impossible de charger les réservations passager:', err)
+    reservationActive.value = null
+  }
+}
+
+/* =========================================================
+   AUTHENTIFICATION & DÉCONNEXION
+========================================================= */
+async function gererDeconnexion() {
+  await storeAuth.deconnecter()
+  reservationActive.value = null
+  await chargerTrajetsDisponibles()
+}
+
+/* =========================================================
+   RECHERCHE UNIFIÉE DESKTOP & MOBILE
+========================================================= */
+const rechercheUnifiee = reactive({
+  lieu: ''
+})
+
+function lancerRechercheUnifiee() {
+  const query = {}
+  const lieu = rechercheUnifiee.lieu?.trim()
+  if (lieu) {
+    query.q = lieu
+  }
+  routeur.push({
+    path: '/recherche-resultats',
+    query
+  })
+}
+
 const formulaireRecherche = reactive({
-  depart: 'Dakar, Sénégal',
+  depart: '',
   destination: '',
-  date: aujourdhui,
+  date: '',
   passagers: 1,
 })
 
-
-const afficherTrajetPublie =
-  computed(() => {
-    /*
-     * Pour le moment :
-     * on vérifie simplement qu'un trajet existe.
-     *
-     * Plus tard :
-     * tu pourras aussi vérifier son statut
-     * et l'utilisateur connecté.
-     */
-    return (
-      storeAuth.estConnecte &&
-      trajetPublie.value
-    )
-  })
-
-// Affichage lisible de la date
-const dateFormatee = computed(() => {
-  if (!formulaireRecherche.date) return 'Choisir une date'
-  const d = new Date(formulaireRecherche.date)
-  if (isNaN(d.getTime())) return formulaireRecherche.date
-  return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })
-})
-
-function ajusterPassagers(delta) {
-  const nouvelleValeur = formulaireRecherche.passagers + delta
-  if (nouvelleValeur >= 1 && nouvelleValeur <= 8) {
-    formulaireRecherche.passagers = nouvelleValeur
-  }
-}
-
 function lancerRecherche() {
-  console.log('Recherche de trajets lancée :', formulaireRecherche)
+  const query = {}
+  if (formulaireRecherche.depart?.trim()) {
+    query.depart = formulaireRecherche.depart.trim()
+  }
+  if (formulaireRecherche.destination?.trim()) {
+    query.destination = formulaireRecherche.destination.trim()
+  }
+  if (formulaireRecherche.date) {
+    query.date = formulaireRecherche.date
+  }
+  if (formulaireRecherche.passagers && formulaireRecherche.passagers > 1) {
+    query.passagers = String(formulaireRecherche.passagers)
+  }
+
+  routeur.push({
+    path: '/recherche-resultats',
+    query
+  })
 }
 
 function lancerRechercheVocale() {
-  console.log('Recherche vocale activée')
+  routeur.push('/recherche-vocale')
+}
+
+/* =========================================================
+   HELPERS & FORMATAGE
+========================================================= */
+function extraireVille(str) {
+  if (!str) return 'SÉNÉGAL'
+  const parties = str.split(',')
+  return parties[parties.length - 1].trim().toUpperCase() || str.toUpperCase()
+}
+
+function calculerHeureArrivee(heureStr) {
+  if (!heureStr) return '11:00'
+  const [h, m] = heureStr.split(':').map(Number)
+  const arriveeH = (h + 1) % 24
+  const arriveeM = (m + 30) % 60
+  return `${String(arriveeH).padStart(2, '0')}:${String(arriveeM).padStart(2, '0')}`
+}
+
+function naviguerVersDetailTrajet(t) {
+  routeur.push(`/trajet/${t.id}`)
 }
 
 function naviguerVersPublicationConducteur() {
-  if (storeAuth.estConnecte) {
-    routeur.push('/conducteur/tableau-de-bord')
-  } else {
-    storeAuth.definirIntentionRedirection('/conducteur/tableau-de-bord')
-    routeur.push('/connexion?redirection=/conducteur/tableau-de-bord')
-  }
+  routeur.push('/publier-trajet')
 }
 
-function naviguerVersProfil() {
-  if (storeAuth.estConnecte) {
-    routeur.push('/conducteur/tableau-de-bord')
-  } else {
-    routeur.push('/connexion')
-  }
-}
+/* =========================================================
+   CYCLE DE VIE & WATCHERS
+========================================================= */
+onMounted(() => {
+  chargerTrajetsDisponibles()
+  chargerReservationActive()
+})
+
+watch(() => [storeAuth.estConnecte, storeAuth.utilisateur?.estConducteurVerifie], () => {
+  chargerReservationActive()
+})
 </script>
 
 <template>
   <div class="page-accueil">
-    <!-- ======================================================= -->
-    <!-- 1. NAVBAR SUPÉRIEURE DESKTOP        -->
-    <!-- ======================================================= -->
-    <header class="navbar-desktop">
-      <div class="conteneur-navbar">
-        <!-- Logo -->
-        <router-link to="/accueil" class="navbar-logo">
-          <span class="texte-noir">LET'S </span><span class="texte-orange">GO</span>
-        </router-link>
+    <!-- 1. NAVBAR SUPÉRIEURE DESKTOP (Composant Modulaire) -->
+    <BarreNavigation
+      :est-connecte="storeAuth.estConnecte"
+      :utilisateur="storeAuth.utilisateur"
+      :avatar="storeAuth.avatarActif"
+      page-active="covoiturage"
+      @deconnexion="gererDeconnexion"
+    />
 
-        <!-- Liens de navigation centraux -->
-        <nav class="navbar-liens">
-          <router-link to="/accueil" class="lien-nav est-actif">Covoiturage</router-link>
-          <a href="#trajets-populaires" class="lien-nav">Trajets populaires</a>
-          <router-link to="/onboarding" class="lien-nav">Comment ça marche</router-link>
-        </nav>
+    <!-- 2. HERO BANNER DESKTOP (Composant Modulaire) -->
+    <RechercheUnifieeDesktop
+      v-model="rechercheUnifiee.lieu"
+      @rechercher="lancerRechercheUnifiee"
+    />
 
-        <!-- Actions à droite -->
-        <div class="navbar-actions">
-          <button
-            type="button"
-            class="bouton-proposer-navbar"
-            @click="naviguerVersPublicationConducteur"
-          >
-            <span class="plus-icone">+</span>
-            Proposer un trajet
-          </button>
-
-          <!-- Profil / Connexion -->
-          <button
-            type="button"
-            class="bouton-compte-navbar"
-            @click="naviguerVersProfil"
-            :title="storeAuth.estConnecte ? 'Mon espace conducteur' : 'Se connecter'"
-          >
-            <img
-              v-if="storeAuth.estConnecte"
-              :src="storeAuth.utilisateur.photoUrl"
-              :alt="storeAuth.utilisateur.nomComplet"
-              class="avatar-navbar"
-            />
-            <svg
-              v-else
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="#374151"
-              stroke-width="2"
-            >
-              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-              <circle cx="12" cy="7" r="4" />
-            </svg>
-            <span class="nom-utilisateur-navbar">
-              {{ storeAuth.estConnecte ? storeAuth.utilisateur.prenom : 'Connexion' }}
-            </span>
-          </button>
-        </div>
-      </div>
-    </header>
-
-  <!-- =======================================================
-     TRAJET PUBLIÉ DU CONDUCTEUR
-   ======================================================= -->
-<BadgeTrajetPublie
-  v-if="afficherTrajetPublie"
-  :trip-id="trajetPublie.id"
-  :time="trajetPublie.heure"
-  :destination="trajetPublie.destination"
-/>
-
-   <!-- =======================================================
-     BARRE DE RECHERCHE MOBILE
-     Cachée lorsqu'un trajet conducteur est publié
-======================================================= -->
-<div
-  v-if="!afficherTrajetPublie"
-  class="barre-recherche-mobile"
->
-  <div class="destination-barre">
-
-    <div class="icone-recherche-carre">
-      <svg
-        width="18"
-        height="18"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="white"
-        stroke-width="2.5"
-      >
-        <circle
-          cx="11"
-          cy="11"
-          r="8"
-        />
-
-        <line
-          x1="21"
-          y1="21"
-          x2="16.65"
-          y2="16.65"
-        />
-      </svg>
-    </div>
-
-    <div class="destination-texte">
-      <span class="destination-label">
-        VOTRE DESTINATION
-      </span>
-
-      <h2 class="destination-titre">
-        Où allez-vous ?
-      </h2>
-    </div>
-
-    <button
-      type="button"
-      class="bouton-filtre"
-      aria-label="Filtres"
-    >
-      <svg
-        width="18"
-        height="18"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="#374151"
-        stroke-width="2"
-      >
-        <line x1="4" y1="21" x2="4" y2="14" />
-        <line x1="4" y1="10" x2="4" y2="3" />
-
-        <line x1="12" y1="21" x2="12" y2="12" />
-        <line x1="12" y1="8" x2="12" y2="3" />
-
-        <line x1="20" y1="21" x2="20" y2="16" />
-        <line x1="20" y1="12" x2="20" y2="3" />
-      </svg>
-    </button>
-
-  </div>
-</div>
-
-    <!-- ======================================================= -->
-    <!-- 3. HERO BANNER DESKTOP (Titre & Slogan d'accueil)       -->
-    <!-- ======================================================= -->
-    <section class="hero-banniere-desktop">
-      <div class="hero-contenu-desktop">
-        <h1 class="hero-titre-principal">
-          Où allez-vous ? Voyagez moins cher partout au Sénégal.
-        </h1>
-        <p class="hero-soustitre-principal">
-          Le covoiturage convivial et économique reliant Dakar, Thiès, Touba, Saint-Louis et toutes les régions.
-        </p>
-
-        <!-- BARRE DE RECHERCHE HORIZONTALE DESKTOP (BlaBlaCar Style) -->
-        <div class="barre-recherche-horizontale">
-          <!-- 1. Départ -->
-          <div class="segment-recherche segment-depart">
-            <span class="segment-icone">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FF4D2D" stroke-width="2.5">
-                <circle cx="12" cy="12" r="9" />
-                <circle cx="12" cy="12" r="3" fill="#FF4D2D" />
-              </svg>
-            </span>
-            <div class="segment-saisie">
-              <label for="desktop-depart" class="segment-libelle">Départ</label>
-              <input
-                id="desktop-depart"
-                v-model="formulaireRecherche.depart"
-                type="text"
-                placeholder="Ville, gare ou lieu..."
-                class="segment-input"
-              />
-            </div>
-          </div>
-
-          <div class="separateur-segment"></div>
-
-          <!-- 2. Destination -->
-          <div class="segment-recherche segment-destination">
-            <span class="segment-icone">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FF4D2D" stroke-width="2.5">
-                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
-                <circle cx="12" cy="10" r="3" fill="#FF4D2D" />
-              </svg>
-            </span>
-            <div class="segment-saisie">
-              <label for="desktop-destination" class="segment-libelle">Destination</label>
-              <input
-                id="desktop-destination"
-                v-model="formulaireRecherche.destination"
-                type="text"
-                placeholder="Où voulez-vous aller ?"
-                class="segment-input"
-              />
-            </div>
-          </div>
-
-          <div class="separateur-segment"></div>
-
-          <!-- 3. Date avec sélecteur calendrier natif -->
-          <div class="segment-recherche segment-date">
-            <span class="segment-icone">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FF4D2D" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-                <line x1="16" y1="2" x2="16" y2="6" />
-                <line x1="8" y1="2" x2="8" y2="6" />
-                <line x1="3" y1="10" x2="21" y2="10" />
-              </svg>
-            </span>
-            <div class="segment-saisie">
-              <label for="desktop-date" class="segment-libelle">Date de départ</label>
-              <input
-                id="desktop-date"
-                v-model="formulaireRecherche.date"
-                type="date"
-                :min="aujourdhui"
-                class="segment-input input-date-desktop"
-              />
-            </div>
-          </div>
-
-          <div class="separateur-segment"></div>
-
-          <!-- 4. Passagers avec saisie directe et boutons +/- -->
-          <div class="segment-recherche segment-passagers">
-            <span class="segment-icone">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FF4D2D" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                <circle cx="9" cy="7" r="4" />
-                <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-                <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-              </svg>
-            </span>
-            <div class="segment-saisie">
-              <label for="desktop-passagers" class="segment-libelle">Passagers</label>
-              <div
-  class="controle-passagers"
-  aria-label="Nombre de passagers"
->
-  <button
-    type="button"
-    class="compteur-passager-bouton"
-    :disabled="
-      formulaireRecherche.passagers <= 1
-    "
-    aria-label="Diminuer le nombre de passagers"
-    @click="ajusterPassagers(-1)"
-  >
-    −
-  </button>
-
-  <span
-    class="compteur-passager-valeur"
-  >
-    {{ formulaireRecherche.passagers }}
-  </span>
-
-  <button
-    type="button"
-    class="compteur-passager-bouton"
-    :disabled="
-      formulaireRecherche.passagers >= 8
-    "
-    aria-label="Augmenter le nombre de passagers"
-    @click="ajusterPassagers(1)"
-  >
-    +
-  </button>
-</div>
-            </div>
-          </div>
-
-          <!-- 5. Bouton d'action Rechercher -->
-          <button
-            type="button"
-            class="bouton-rechercher-desktop"
-            @click="lancerRecherche"
-          >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5">
-              <circle cx="11" cy="11" r="8" />
-              <line x1="21" y1="21" x2="16.65" y2="16.65" />
-            </svg>
-            <span>Rechercher</span>
-          </button>
-        </div>
-      </div>
-    </section>
-
-    <!-- ======================================================= -->
-    <!-- 4. CONTENU PRINCIPAL                                    -->
-    <!-- ======================================================= -->
+    <!-- 3. CONTENU PRINCIPAL -->
     <main class="conteneur-principal">
-      <!-- CARTE SOMBRE MOBILE (Cachée sur desktop au profit de la barre horizontale) -->
-      <section class="carte-recherche-sombre-mobile">
-        <div class="formulaire-champs">
-          <!-- Point Départ -->
-          <div class="ligne-lieu">
-            <span class="pastille-icone pastille-depart">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#FF4D2D" stroke-width="2.5">
-                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
-                <circle cx="12" cy="10" r="3" />
-              </svg>
-            </span>
-            <div class="champ-texte-bloc">
-              <span class="label-champ">DÉPART</span>
-              <input
-                v-model="formulaireRecherche.depart"
-                type="text"
-                placeholder="Dakar, Sénégal"
-                class="input-transparent"
-              />
-            </div>
-          </div>
+      <!-- Formulaire de recherche mobile (Composant Modulaire) -->
+      <CarteRechercheMobile
+        v-model:depart="formulaireRecherche.depart"
+        v-model:destination="formulaireRecherche.destination"
+        v-model:date="formulaireRecherche.date"
+        v-model:passagers="formulaireRecherche.passagers"
+        :date-min="aujourdhui"
+        @rechercher="lancerRecherche"
+        @recherche-vocale="lancerRechercheVocale"
+      />
 
-          <!-- Ligne de liaison verticale -->
-          <div class="liaison-verticale"></div>
-
-          <!-- Point Destination -->
-          <div class="ligne-lieu">
-            <span class="pastille-icone pastille-destination">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="white">
-                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
-                <circle cx="12" cy="10" r="3" fill="#FF4D2D" />
-              </svg>
-            </span>
-            <div class="champ-texte-bloc">
-              <span class="label-champ">DESTINATION</span>
-              <input
-                v-model="formulaireRecherche.destination"
-                type="text"
-                placeholder="Saisir l'arrivée (ex: Thiès, Saint-Louis...)"
-                class="input-transparent input-destination"
-              />
-            </div>
-          </div>
-
-          <!-- Sélecteurs Date & Passagers interactifs -->
-          <div class="ligne-selecteurs">
-            <!-- Date avec input calendrier natif -->
-            <div class="selecteur-case">
-              <label for="mobile-date" class="selecteur-label">DATE</label>
-              <div class="selecteur-valeur">
-                <span class="selecteur-icone">
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#FF4D2D" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-                    <line x1="16" y1="2" x2="16" y2="6" />
-                    <line x1="8" y1="2" x2="8" y2="6" />
-                    <line x1="3" y1="10" x2="21" y2="10" />
-                  </svg>
-                </span>
-                <input
-                  id="mobile-date"
-                  v-model="formulaireRecherche.date"
-                  type="date"
-                  :min="aujourdhui"
-                  class="input-date-mobile"
-                />
-              </div>
-            </div>
-
-            <!-- Passagers avec boutons interactifs -->
-            <div class="selecteur-case">
-              <span class="selecteur-label">PASSAGERS</span>
-              <div class="selecteur-valeur">
-  <div
-    class="passenger-counter"
-    role="group"
-    aria-label="Nombre de passagers"
-  >
-    <span class="passenger-counter-value">
-      {{ formulaireRecherche.passagers }}
-    </span>
-
-    <div class="passenger-counter-controls">
-      <button
-        type="button"
-        class="passenger-counter-button"
-        :disabled="
-          formulaireRecherche.passagers >= 8
-        "
-        aria-label="Augmenter le nombre de passagers"
-        @click="ajusterPassagers(1)"
-      >
-        <svg
-          viewBox="0 0 24 24"
-          aria-hidden="true"
-        >
-          <path d="M7 14l5-5 5 5" />
-        </svg>
-      </button>
-
-      <button
-        type="button"
-        class="passenger-counter-button"
-        :disabled="
-          formulaireRecherche.passagers <= 1
-        "
-        aria-label="Diminuer le nombre de passagers"
-        @click="ajusterPassagers(-1)"
-      >
-        <svg
-          viewBox="0 0 24 24"
-          aria-hidden="true"
-        >
-          <path d="M7 10l5 5 5-5" />
-        </svg>
-      </button>
-    </div>
-  </div>
-</div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Boutons d'Action Mobile -->
-        <div class="actions-recherche">
-          <BoutonBase
-            variante="primaire"
-            bloc
-            class="bouton-rechercher"
-            @clic="lancerRecherche"
-          >
-            Rechercher un trajet
-          </BoutonBase>
-
-          <button
-            type="button"
-            class="bouton-recherche-vocale"
-            @click="lancerRechercheVocale"
-          >
-            <span class="icone-micro">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#111627" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
-                <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-                <line x1="12" y1="19" x2="12" y2="23" />
-                <line x1="8" y1="23" x2="16" y2="23" />
-              </svg>
-            </span>
-            Rechercher avec ma voix
-          </button>
-        </div>
-      </section>
-
-      <!-- SECTION TRAJETS POPULAIRES (Grille fluide sur desktop) -->
+      <!-- SECTION TRAJETS DISPONIBLES (Données réelles issues de la base de données Django) -->
       <section id="trajets-populaires" class="section-trajets-populaires">
         <div class="entete-section">
           <div class="titre-avec-puce">
             <span class="puce-orange"></span>
-            <h3 class="titre-section">TRAJETS POPULAIRES</h3>
+            <h3 class="titre-section">TRAJETS DISPONIBLES</h3>
           </div>
-          <a href="#voir-tout" class="lien-voir-tout">Voir tous les trajets →</a>
+          <button
+            type="button"
+            class="lien-voir-tout-conducteur"
+            @click="routeur.push('/recherche-resultats')"
+          >
+            Voir tous les trajets →
+          </button>
         </div>
 
-        <!-- Grille des cartes de trajets -->
-        <div class="grille-trajets">
+        <!-- Grille dynamique des trajets en base de données -->
+        <div v-if="trajetsDisponibles.length > 0" class="grille-trajets">
           <CarteTrajet
-            depart-ville="LYON"
-            depart-lieu="Gare Part-Dieu"
-            depart-heure="08:30"
-            arrivee-ville="MARSEILLE"
-            arrivee-lieu="Vieux Port"
-            arrivee-heure="11:45"
-            prix="24,00€"
-            statut="DISPONIBLE"
-            conducteur-nom="Thomas Meyer"
-            conducteur-note="4.9"
-            conducteur-photo="/images/avatar_thomas.jpg"
+            v-for="t in trajetsDisponibles"
+            :key="t.id"
+            :depart-ville="extraireVille(t.lieu_depart)"
+            :depart-lieu="t.lieu_depart"
+            :depart-heure="t.heure_depart?.substring(0, 5)"
+            :arrivee-ville="extraireVille(t.destination)"
+            :arrivee-lieu="t.destination"
+            :arrivee-heure="calculerHeureArrivee(t.heure_depart)"
+            :prix="`${Number(t.prix_par_place).toLocaleString('fr-FR')} FCFA`"
+            :statut="t.places_disponibles > 0 ? 'DISPONIBLE' : 'COMPLET'"
+            :conducteur-nom="t.conducteur_nom || 'Conducteur Let\'s Go'"
+            :conducteur-note="t.conducteur_note || 4.9"
+            :conducteur-photo="t.conducteur_photo || ''"
+            :est-reserve="estTrajetReserve(t)"
+            @reserver="naviguerVersDetailTrajet(t)"
           />
+        </div>
 
-          <CarteTrajet
-            depart-ville="LYON"
-            depart-lieu="Perrache"
-            depart-heure="09:15"
-            arrivee-ville="PARIS"
-            arrivee-lieu="Bercy"
-            arrivee-heure="14:00"
-            prix="32,00€"
-            statut="DISPONIBLE"
-            conducteur-nom="Thomas Meyer"
-            conducteur-note="4.9"
-            conducteur-photo="/images/avatar_thomas.jpg"
-          />
-
-          <!-- 3e trajet pour enrichir la grille desktop -->
-          <CarteTrajet
-            depart-ville="DAKAR"
-            depart-lieu="Colobane / Baux Maraîchers"
-            depart-heure="07:00"
-            arrivee-ville="THIÈS"
-            arrivee-lieu="Centre-ville / Gare"
-            arrivee-heure="08:15"
-            prix="3 000 FCFA"
-            statut="DISPONIBLE"
-            conducteur-nom="Thomas Meyer"
-            conducteur-note="4.9"
-            conducteur-photo="/images/avatar_thomas.jpg"
-          />
-
-          <!-- 4e trajet pour enrichir la grille desktop -->
-          <CarteTrajet
-            depart-ville="DAKAR"
-            depart-lieu="Aéroport AIBD"
-            depart-heure="14:30"
-            arrivee-ville="SAINT-LOUIS"
-            arrivee-lieu="Pont Faidherbe"
-            arrivee-heure="18:00"
-            prix="8 500 FCFA"
-            statut="DISPONIBLE"
-            conducteur-nom="Thomas Meyer"
-            conducteur-note="4.9"
-            conducteur-photo="/images/avatar_thomas.jpg"
-          />
+        <!-- État vide propre sans données mockées -->
+        <div v-else class="carte-etat-vide-bdd">
+          <div class="icone-vide-cercle">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#FF4D2D" stroke-width="2.2">
+              <path d="M12 2a8 8 0 0 0-8 8c0 5.25 8 12 8 12s8-6.75 8-12a8 8 0 0 0-8-8z" />
+              <circle cx="12" cy="10" r="3" />
+            </svg>
+          </div>
+          <h4 class="titre-vide-bdd">Aucun trajet planifié pour le moment</h4>
+          <p class="description-vide-bdd">
+            Soyez le premier à proposer un trajet sur LET'S GO ou revenez un peu plus tard !
+          </p>
+          <button
+            type="button"
+            class="bouton-proposer-vide"
+            @click="naviguerVersPublicationConducteur"
+          >
+            + Proposer le premier trajet
+          </button>
         </div>
       </section>
 
-      <!-- BANNIÈRE CONDUCTEUR ÉLARGIE (Mise en avant Desktop & Mobile) -->
+      <!-- BANNIÈRE CONDUCTEUR ÉLARGIE (ESPACE CONDUCTEUR) -->
       <section class="banniere-conducteur-large">
         <div class="banniere-corps">
           <div class="banniere-textes">
@@ -636,7 +314,7 @@ function naviguerVersProfil() {
               @click="naviguerVersPublicationConducteur"
             >
               <span class="icone-plus-orange">+</span>
-              Proposer un trajet
+              <span class="texte-proposer-trajet">Proposer un trajet</span>
               <span class="fleche-chevron">›</span>
             </button>
           </div>
@@ -657,36 +335,36 @@ function naviguerVersProfil() {
 
     <!-- FOOTER COMPLET AVEC RÉSEAUX SOCIAUX -->
     <PiedDePage />
+
+    <!-- BANDEAU / MODAL RÉSERVATION EN COURS DU PASSAGER (ACTIF UNIQUEMENT SI RÉSERVATION FAITE) -->
+    <ModalReservationEnCours
+      v-if="reservationActive"
+      :reservation-data="reservationActive"
+      @annule="chargerReservationActive"
+    />
   </div>
 </template>
+
 <style scoped>
 /* =======================================================
-   DESIGN TOKENS
+   DESIGN TOKENS & DISPOSITION GLOBALE
 ======================================================= */
-
 .page-accueil {
   --brand: #ff4d2d;
   --brand-hover: #f04427;
   --brand-active: #e94327;
-
   --black: #111627;
   --dark-gray: #374151;
-
   --text-secondary: #6b7280;
   --text-muted: #9ca3af;
-
   --light-gray: #f3f4f6;
   --soft-gray: #e5e7eb;
-
   --white: #ffffff;
 
   min-height: 100vh;
-
   background-color: #f8fafc;
-
   display: flex;
   flex-direction: column;
-
   overflow-x: hidden;
 }
 
@@ -696,2216 +374,281 @@ function naviguerVersProfil() {
   box-sizing: border-box;
 }
 
-
-/* =======================================================
-   1. NAVBAR DESKTOP
-======================================================= */
-
-.navbar-desktop {
-  display: none;
-
-  background-color: var(--white);
-
-  border-bottom:
-    1px solid
-    rgba(229, 231, 235, 0.8);
-
-  position: sticky;
-
-  top: 0;
-
-  z-index: 100;
-
-  box-shadow:
-    0 2px 10px
-    rgba(17, 24, 39, 0.035);
-}
-
-.conteneur-navbar {
-  width: 100%;
-
-  max-width: 1200px;
-
-  margin: 0 auto;
-
-  padding:
-    0
-    24px;
-
-  height: 76px;
-
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.navbar-logo {
-  font-family: var(--font-family-base);
-
-  font-size: 26px;
-
-  font-weight: 900;
-
-  letter-spacing: -0.5px;
-}
-
-.texte-noir {
-  color: var(--color-black);
-}
-
-.texte-orange {
-  color: var(--color-brand-accent);
-}
-
-.navbar-liens {
-  display: flex;
-  align-items: center;
-
-  gap: 32px;
-}
-
-.lien-nav {
-  font-family: var(--font-family-base);
-
-  font-size: 15px;
-
-  font-weight: 600;
-
-  color: #4b5563;
-
-  transition:
-    color
-    var(--transition-fast);
-}
-
-.lien-nav:hover,
-.lien-nav.est-actif {
-  color: var(--color-brand-accent);
-}
-
-.navbar-actions {
-  display: flex;
-  align-items: center;
-
-  gap: 16px;
-}
-
-.bouton-proposer-navbar {
-  display: inline-flex;
-  align-items: center;
-
-  justify-content: center;
-
-  gap: 8px;
-
-  background-color: var(--white);
-
-  border:
-    1.5px solid
-    var(--color-brand-accent);
-
-  color: var(--color-brand-accent);
-
-  padding:
-    10px
-    20px;
-
-  border-radius: var(--radius-full);
-
-  font-family: var(--font-family-base);
-
-  font-size: 14px;
-
-  font-weight: 700;
-
-  cursor: pointer;
-
-  transition:
-    background-color
-      var(--transition-fast),
-    color
-      var(--transition-fast),
-    border-color
-      var(--transition-fast),
-    transform
-      var(--transition-fast);
-}
-
-.bouton-proposer-navbar:hover {
-  background-color:
-    var(--color-brand-accent);
-
-  color:
-    var(--color-white);
-
-  border-color:
-    var(--color-brand-accent);
-
-  transform:
-    translateY(-1px);
-}
-
-.plus-icone {
-  font-size: 18px;
-
-  line-height: 1;
-}
-
-.bouton-compte-navbar {
-  display: inline-flex;
-
-  align-items: center;
-  justify-content: center;
-
-  gap: 8px;
-
-  background: #f3f4f6;
-
-  border: none;
-
-  padding:
-    8px
-    16px;
-
-  border-radius:
-    var(--radius-full);
-
-  font-family:
-    var(--font-family-base);
-
-  font-size: 14px;
-
-  font-weight: 600;
-
-  color: var(--color-black);
-
-  cursor: pointer;
-
-  transition:
-    background-color
-      var(--transition-fast),
-    transform
-      var(--transition-fast);
-}
-
-.bouton-compte-navbar:hover {
-  background-color:
-    #e5e7eb;
-
-  transform:
-    translateY(-1px);
-}
-
-.avatar-navbar {
-  width: 28px;
-  height: 28px;
-
-  border-radius: 50%;
-
-  object-fit: cover;
-}
-
-.nom-utilisateur-navbar {
-  white-space: nowrap;
-}
-
-
-/* =======================================================
-   2. BADGE TRAJET PUBLIÉ
-======================================================= */
-
-:deep(.published-trip-badge) {
-  margin-top: 12px;
-
-  margin-bottom: 28px;
-}
-
-
-/* =======================================================
-   3. BARRE DE RECHERCHE MOBILE
-======================================================= */
-
-.barre-recherche-mobile {
-  width: 100%;
-
-  max-width: 500px;
-
-  margin: 0 auto;
-
-  padding:
-    12px
-    16px
-    10px;
-}
-
-.destination-barre {
-  width: 100%;
-
-  min-height: 60px;
-
-  display: flex;
-
-  align-items: center;
-
-  gap: 11px;
-
-  padding:
-    8px
-    12px
-    8px
-    10px;
-
-  background:
-    var(--white);
-
-  border:
-    1px solid
-    rgba(229, 231, 235, 0.8);
-
-  border-radius:
-    var(--radius-full);
-
-  box-shadow:
-    0 5px 14px
-    rgba(
-      17,
-      24,
-      39,
-      0.055
-    );
-}
-
-.icone-recherche-carre {
-  width: 40px;
-  height: 40px;
-
-  flex: 0 0 40px;
-
-  display: flex;
-
-  align-items: center;
-  justify-content: center;
-
-  border-radius: 12px;
-
-  background:
-    var(--color-brand-accent);
-}
-
-.destination-texte {
-  min-width: 0;
-
-  flex: 1;
-
-  display: flex;
-  flex-direction: column;
-}
-
-.destination-label {
-  font-size: 9px;
-
-  line-height: 1;
-
-  font-weight: 700;
-
-  color:
-    var(--color-text-muted);
-
-  letter-spacing:
-    0.7px;
-}
-
-.destination-titre {
-  margin:
-    3px
-    0
-    0;
-
-  font-family:
-    var(--font-family-base);
-
-  font-size: 15px;
-
-  line-height: 1.2;
-
-  font-weight: 800;
-
-  color:
-    var(--color-black);
-}
-
-.bouton-filtre {
-  width: 36px;
-  height: 36px;
-
-  flex: 0 0 36px;
-
-  display: flex;
-
-  align-items: center;
-  justify-content: center;
-
-  border: none;
-
-  border-radius: 50%;
-
-  background: #f3f4f6;
-
-  cursor: pointer;
-
-  transition:
-    background-color
-      var(--transition-fast),
-    transform
-      var(--transition-fast);
-}
-
-.bouton-filtre:hover {
-  background: #e9ebee;
-
-  transform:
-    translateY(-1px);
-}
-
-
-/* =======================================================
-   4. HERO DESKTOP
-======================================================= */
-
-.hero-banniere-desktop {
-  display: none;
-
-  background:
-    linear-gradient(
-      180deg,
-      #ffffff 0%,
-      #f3f4f6 100%
-    );
-
-  padding:
-    52px
-    24px
-    68px;
-
-  border-bottom:
-    1px solid
-    #e5e7eb;
-}
-
-.hero-contenu-desktop {
-  max-width: 1200px;
-
-  margin: 0 auto;
-
-  display: flex;
-
-  flex-direction: column;
-
-  align-items: center;
-
-  text-align: center;
-}
-
-.hero-titre-principal {
-  max-width: 780px;
-
-  margin:
-    0
-    0
-    14px;
-
-  font-family:
-    var(--font-family-base);
-
-  font-size: 38px;
-
-  line-height: 1.25;
-
-  font-weight: 900;
-
-  letter-spacing:
-    -0.8px;
-
-  color:
-    var(--color-black);
-}
-
-.hero-soustitre-principal {
-  max-width: 640px;
-
-  margin:
-    0
-    0
-    42px;
-
-  font-size: 16px;
-
-  line-height: 1.6;
-
-  color: #6b7280;
-}
-
-
-/* =======================================================
-   5. RECHERCHE DESKTOP
-======================================================= */
-
-.barre-recherche-horizontale {
-  width: 100%;
-
-  max-width: 1080px;
-
-  display: flex;
-
-  align-items: center;
-
-  padding: 6px;
-
-  background:
-    var(--white);
-
-  border:
-    1.5px solid
-    #e5e7eb;
-
-  border-radius:
-    var(--radius-full);
-
-  box-shadow:
-    0 10px 24px
-    rgba(
-      17,
-      24,
-      39,
-      0.07
-    );
-}
-
-.segment-recherche {
-  min-width: 0;
-
-  flex: 1;
-
-  display: flex;
-
-  align-items: center;
-
-  gap: 12px;
-
-  padding:
-    10px
-    18px;
-
-  text-align: left;
-}
-
-.segment-icone {
-  flex-shrink: 0;
-
-  display: flex;
-
-  align-items: center;
-  justify-content: center;
-}
-
-.segment-saisie {
-  min-width: 0;
-
-  flex: 1;
-
-  display: flex;
-
-  flex-direction: column;
-}
-
-.segment-libelle {
-  font-size: 11px;
-
-  line-height: 1;
-
-  font-weight: 700;
-
-  color: #9ca3af;
-
-  letter-spacing:
-    0.6px;
-
-  text-transform:
-    uppercase;
-}
-
-.segment-input {
-  width: 100%;
-
-  border: none;
-
-  outline: none;
-
-  background:
-    transparent;
-
-  font-family:
-    var(--font-family-base);
-
-  font-size: 15px;
-
-  font-weight: 700;
-
-  color:
-    var(--color-black);
-}
-
-.segment-input::placeholder {
-  color: #9ca3af;
-
-  font-weight: 500;
-}
-
-.input-date-desktop {
-  cursor: pointer;
-}
-
-.separateur-segment {
-  width: 1px;
-
-  height: 38px;
-
-  flex: 0 0 1px;
-
-  background:
-    #e5e7eb;
-}
-
-
-/* =======================================================
-   6. COMPTEUR PASSAGERS DESKTOP
-======================================================= */
-
-.controle-passagers {
-  width: 100%;
-
-  display: flex;
-
-  align-items: center;
-
-  justify-content: space-between;
-
-  gap: 8px;
-
-  min-height: 34px;
-
-  padding:
-    3px
-    5px;
-
-  border:
-    1px solid
-    #e5e7eb;
-
-  border-radius:
-    999px;
-
-  background:
-    #f8fafc;
-}
-
-.compteur-passager-bouton {
-  width: 25px;
-  height: 25px;
-
-  flex: 0 0 25px;
-
-  display: flex;
-
-  align-items: center;
-  justify-content: center;
-
-  padding: 0;
-
-  border: none;
-
-  border-radius: 50%;
-
-  background:
-    var(--white);
-
-  color:
-    var(--color-black);
-
-  font-size: 15px;
-
-  line-height: 1;
-
-  font-weight: 800;
-
-  cursor: pointer;
-
-  transition:
-    background-color
-      160ms ease,
-    color
-      160ms ease,
-    transform
-      160ms ease,
-    opacity
-      160ms ease;
-}
-
-.compteur-passager-bouton:hover:not(:disabled) {
-  background:
-    var(--color-brand-accent);
-
-  color:
-    var(--color-white);
-
-  transform:
-    scale(1.04);
-}
-
-.compteur-passager-bouton:active:not(:disabled) {
-  transform:
-    scale(0.97);
-}
-
-.compteur-passager-bouton:disabled {
-  opacity: 0.35;
-
-  cursor: not-allowed;
-}
-
-.compteur-passager-valeur {
-  min-width: 26px;
-
-  text-align: center;
-
-  color:
-    var(--color-black);
-
-  font-family:
-    var(--font-family-base);
-
-  font-size: 14px;
-
-  line-height: 1;
-
-  font-weight: 800;
-}
-
-
-/* =======================================================
-   RECHERCHER DESKTOP
-======================================================= */
-
-.bouton-rechercher-desktop {
-  flex-shrink: 0;
-
-  display: flex;
-
-  align-items: center;
-  justify-content: center;
-
-  gap: 10px;
-
-  padding:
-    16px
-    28px;
-
-  border: none;
-
-  border-radius:
-    var(--radius-full);
-
-  background:
-    var(--color-brand-accent);
-
-  color:
-    var(--color-white);
-
-  font-family:
-    var(--font-family-base);
-
-  font-size: 15px;
-
-  font-weight: 800;
-
-  cursor: pointer;
-
-  white-space: nowrap;
-
-  transition:
-    background-color
-      var(--transition-fast),
-    transform
-      var(--transition-fast);
-}
-
-.bouton-rechercher-desktop:hover {
-  background:
-    var(--color-brand-accent-hover);
-
-  transform:
-    translateY(-1px);
-}
-
-
-/* =======================================================
-   7. CONTENEUR PRINCIPAL
-======================================================= */
-
+/* CONTENEUR PRINCIPAL */
 .conteneur-principal {
   width: 100%;
-
   max-width: 500px;
-
   margin: 0 auto;
-
-  padding:
-    0
-    16px
-    36px;
-
+  padding: 16px 16px 36px;
   display: flex;
-
   flex-direction: column;
-
   gap: 42px;
 }
 
-
-/* =======================================================
-   8. CARTE RECHERCHE SOMBRE
-======================================================= */
-
-.carte-recherche-sombre-mobile {
-  width: 100%;
-
-  padding:
-    22px
-    18px
-    18px;
-
-  border:
-    1px solid
-    rgba(
-      255,
-      255,
-      255,
-      0.06
-    );
-
-  border-radius: 28px;
-
-  background:
-    linear-gradient(
-      180deg,
-      #182033 0%,
-      #111627 100%
-    );
-
-  color:
-    var(--color-white);
-
-  /*
-   * Très légère pour éviter l'effet
-   * de bloc "enfoncé".
-   */
-  box-shadow:
-    0 4px 12px
-    rgba(
-      17,
-      22,
-      39,
-      0.07
-    );
+@media (min-width: 768px) {
+  .conteneur-principal {
+    max-width: 1200px;
+    padding: 36px 24px 60px;
+  }
 }
 
-
-/* =======================================================
-   FORMULAIRE RECHERCHE
-======================================================= */
-
-.formulaire-champs {
-  width: 100%;
-
-  display: flex;
-
-  flex-direction: column;
-}
-
-.ligne-lieu {
-  width: 100%;
-
-  display: flex;
-
-  align-items: center;
-
-  gap: 12px;
-}
-
-.pastille-icone {
-  width: 32px;
-  height: 32px;
-
-  flex: 0 0 32px;
-
-  display: flex;
-
-  align-items: center;
-  justify-content: center;
-
-  border-radius: 50%;
-}
-
-.pastille-depart {
-  background:
-    var(--color-white);
-}
-
-.pastille-destination {
-  background:
-    var(--color-brand-accent);
-}
-
-.champ-texte-bloc {
-  min-width: 0;
-
-  flex: 1;
-
-  display: flex;
-
-  flex-direction: column;
-}
-
-.label-champ {
-  font-size: 10px;
-
-  line-height: 1;
-
-  font-weight: 700;
-
-  color: #9ca3af;
-
-  letter-spacing:
-    0.8px;
-}
-
-.input-transparent {
-  width: 100%;
-
-  min-width: 0;
-
-  margin-top: 4px;
-
-  padding: 0;
-
-  border: none;
-
-  outline: none;
-
-  background:
-    transparent;
-
-  color:
-    var(--color-white);
-
-  font-family:
-    var(--font-family-base);
-
-  font-size: 15px;
-
-  line-height: 1.25;
-
-  font-weight: 700;
-}
-
-.input-transparent::placeholder {
-  color: #6b7280;
-
-  font-weight: 500;
-}
-
-.liaison-verticale {
-  width: 2px;
-  height: 19px;
-
-  margin:
-    4px
-    0
-    4px
-    15px;
-
-  border-radius: 999px;
-
-  background:
-    rgba(
-      255,
-      255,
-      255,
-      0.18
-    );
-}
-
-
-/* =======================================================
-   SELECTEURS DATE / PASSAGERS
-======================================================= */
-
-.ligne-selecteurs {
-  width: 100%;
-
-  display: grid;
-
-  grid-template-columns:
-    minmax(0, 1fr)
-    minmax(0, 1fr);
-
-  gap: 11px;
-
-  margin-top: 20px;
-}
-
-.selecteur-case {
-  min-width: 0;
-
-  padding:
-    11px
-    12px;
-
-  background:
-    var(--color-white);
-
-  border-radius: 17px;
-
-  display: flex;
-
-  flex-direction: column;
-
-  box-shadow: none;
-}
-
-.selecteur-label {
-  font-size: 9px;
-
-  line-height: 1;
-
-  font-weight: 700;
-
-  color:
-    var(--color-text-muted);
-
-  letter-spacing:
-    0.7px;
-
-  text-transform:
-    uppercase;
-}
-
-.selecteur-valeur {
-  min-width: 0;
-
-  display: flex;
-
-  align-items: center;
-
-  gap: 7px;
-
-  margin-top: 6px;
-
-  font-size: 13px;
-
-  line-height: 1.2;
-
-  font-weight: 700;
-
-  color:
-    var(--color-black);
-}
-
-.selecteur-icone {
-  flex-shrink: 0;
-
-  display: flex;
-
-  align-items: center;
-  justify-content: center;
-}
-
-.input-date-mobile {
-  width: 100%;
-
-  min-width: 0;
-
-  border: none;
-
-  outline: none;
-
-  background:
-    transparent;
-
-  font-family:
-    var(--font-family-base);
-
-  font-size: 12px;
-
-  font-weight: 700;
-
-  color:
-    var(--color-black);
-
-  cursor: pointer;
-}
-
-
-/* =======================================================
-   COMPTEUR PASSAGERS MOBILE
-======================================================= */
-
-.controle-passagers-mobile {
-  width: 100%;
-
-  min-height: 31px;
-
-  display: flex;
-
-  align-items: center;
-
-  justify-content: space-between;
-
-  gap: 6px;
-
-  padding:
-    3px
-    4px;
-
-  border:
-    1px solid
-    #e5e7eb;
-
-  border-radius:
-    999px;
-
-  background:
-    #f8fafc;
-}
-
-.compteur-passager-bouton-mobile {
-  width: 23px;
-  height: 23px;
-
-  flex: 0 0 23px;
-
-  display: flex;
-
-  align-items: center;
-  justify-content: center;
-
-  padding: 0;
-
-  border: none;
-
-  border-radius: 50%;
-
-  background:
-    #ffffff;
-
-  color:
-    var(--color-black);
-
-  font-size: 13px;
-
-  line-height: 1;
-
-  font-weight: 800;
-
-  cursor: pointer;
-
-  transition:
-    background-color 160ms ease,
-    color 160ms ease,
-    transform 160ms ease,
-    opacity 160ms ease;
-}
-
-.compteur-passager-bouton-mobile:hover:not(:disabled) {
-  background:
-    var(--color-brand-accent);
-
-  color:
-    var(--color-white);
-}
-
-.compteur-passager-bouton-mobile:active:not(:disabled) {
-  transform:
-    scale(0.95);
-}
-
-.compteur-passager-bouton-mobile:disabled {
-  opacity: 0.35;
-
-  cursor: not-allowed;
-}
-
-.compteur-passager-valeur-mobile {
-  min-width: 24px;
-
-  text-align: center;
-
-  color:
-    var(--color-black);
-
-  font-family:
-    var(--font-family-base);
-
-  font-size: 13px;
-
-  line-height: 1;
-
-  font-weight: 800;
-}
-
-
-/* =======================================================
-   ACTIONS
-======================================================= */
-
-.actions-recherche {
-  display: flex;
-
-  flex-direction: column;
-
-  gap: 11px;
-
-  margin-top: 22px;
-}
-
-.bouton-rechercher {
-  width: 100%;
-
-  height: 52px;
-
-  border-radius: 16px;
-
-  box-shadow: none !important;
-
-  transform: none;
-
-  transition:
-    background-color
-      160ms ease,
-    transform
-      160ms ease;
-}
-
-.bouton-rechercher:hover {
-  transform:
-    translateY(-1px);
-
-  box-shadow: none !important;
-}
-
-.bouton-recherche-vocale {
-  width: 100%;
-
-  height: 50px;
-
-  display: flex;
-
-  align-items: center;
-  justify-content: center;
-
-  gap: 8px;
-
-  border: none;
-
-  border-radius: 16px;
-
-  background:
-    var(--color-white);
-
-  color:
-    var(--color-black);
-
-  font-family:
-    var(--font-family-base);
-
-  font-size: 14px;
-
-  font-weight: 700;
-
-  cursor: pointer;
-
-  box-shadow: none;
-
-  transition:
-    background-color
-      160ms ease,
-    transform
-      160ms ease;
-}
-
-.bouton-recherche-vocale:hover {
-  background:
-    #f8f9fa;
-
-  transform:
-    translateY(-1px);
-}
-
-.icone-micro {
-  flex-shrink: 0;
-
-  display: flex;
-
-  align-items: center;
-  justify-content: center;
-}
-
-
-/* =======================================================
-   9. TRAJETS POPULAIRES
-======================================================= */
-
+/* SECTION TRAJETS */
 .section-trajets-populaires {
   width: 100%;
-
   display: flex;
-
   flex-direction: column;
-
-  gap: 15px;
-
-  margin-top: 4px;
-
-  margin-bottom: 6px;
+  gap: 20px;
 }
 
 .entete-section {
-  width: 100%;
-
   display: flex;
-
   align-items: center;
-
   justify-content: space-between;
-
-  gap: 12px;
 }
 
 .titre-avec-puce {
-  min-width: 0;
-
   display: flex;
-
   align-items: center;
-
-  gap: 8px;
+  gap: 10px;
 }
 
 .puce-orange {
-  width: 7px;
-  height: 7px;
-
-  flex: 0 0 7px;
-
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
-
-  background:
-    var(--color-brand-accent);
+  background-color: var(--brand);
 }
 
 .titre-section {
-  min-width: 0;
-
-  margin: 0;
-
-  font-family:
-    var(--font-family-base);
-
-  font-size: 13px;
-
-  line-height: 1.2;
-
+  font-size: 14px;
   font-weight: 800;
-
+  color: var(--black);
   letter-spacing: 0.8px;
-
-  color: #4b5563;
+  text-transform: uppercase;
+  margin: 0;
 }
 
-.lien-voir-tout {
-  flex-shrink: 0;
-
-  font-size: 11px;
-
-  line-height: 1.2;
-
+.lien-voir-tout-conducteur {
+  background: none;
+  border: none;
+  font-size: 13px;
   font-weight: 700;
-
-  color:
-    var(--color-brand-accent);
-
-  white-space: nowrap;
-
-  transition:
-    opacity
-      var(--transition-fast);
+  color: var(--brand);
+  cursor: pointer;
+  transition: color 0.18s ease;
+  font-family: inherit;
 }
 
-.lien-voir-tout:hover {
-  opacity: 0.8;
-
-  text-decoration:
-    underline;
+.lien-voir-tout-conducteur:hover {
+  color: var(--brand-hover);
+  text-decoration: underline;
 }
 
+/* GRILLE TRAJETS */
 .grille-trajets {
-  width: 100%;
-
-  display: flex;
-
-  flex-direction: column;
-
+  display: grid;
+  grid-template-columns: 1fr;
   gap: 16px;
 }
 
+@media (min-width: 768px) {
+  .grille-trajets {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 20px;
+  }
+}
+
+@media (min-width: 1100px) {
+  .grille-trajets {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+/* ÉTAT VIDE BDD */
+.carte-etat-vide-bdd {
+  background: #FFFFFF;
+  border: 1px dashed #E5E7EB;
+  border-radius: 24px;
+  padding: 40px 24px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.icone-vide-cercle {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: #FFF5F2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 16px;
+}
+
+.titre-vide-bdd {
+  font-size: 17px;
+  font-weight: 800;
+  color: var(--black);
+  margin: 0 0 8px;
+}
+
+.description-vide-bdd {
+  font-size: 14px;
+  color: var(--text-secondary);
+  max-width: 360px;
+  margin: 0 0 20px;
+  line-height: 1.5;
+}
+
+.bouton-proposer-vide {
+  padding: 10px 22px;
+  background: var(--brand);
+  color: #FFFFFF;
+  border: none;
+  border-radius: 9999px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(255, 77, 45, 0.1);
+  transition: all 0.18s ease;
+  font-family: inherit;
+}
+
+.bouton-proposer-vide:hover {
+  background: var(--brand-hover);
+  transform: translateY(-1px);
+}
+
+/* SECTION CARROUSEL */
+.section-carrousel-bloc {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
 
 /* =======================================================
-   10. BANNIÈRE CONDUCTEUR
+   BANNIÈRE CONDUCTEUR ÉLARGIE
 ======================================================= */
-
 .banniere-conducteur-large {
   width: 100%;
-
-  padding:
-    30px
-    19px;
-
-  border:
-    1px solid
-    rgba(
-      255,
-      255,
-      255,
-      0.06
-    );
-
-  border-radius: 28px;
-
-  background:
-    linear-gradient(
-      135deg,
-      #1a2136 0%,
-      #111627 100%
-    );
-
-  box-shadow:
-    0 7px 16px
-    rgba(
-      17,
-      22,
-      39,
-      0.09
-    );
+  padding: 28px 20px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 26px;
+  background: linear-gradient(135deg, #1A2136 0%, #111627 100%);
+  box-shadow: 0 10px 25px -5px rgba(17, 22, 39, 0.07);
+  box-sizing: border-box;
 }
 
 .banniere-corps {
   display: flex;
-
   flex-direction: column;
+  gap: 22px;
+}
 
-  gap: 24px;
+.banniere-textes {
+  display: flex;
+  flex-direction: column;
 }
 
 .banniere-tag {
   display: inline-block;
-
-  margin-bottom: 7px;
-
-  font-size: 10px;
-
+  margin-bottom: 8px;
+  font-size: 11px;
   font-weight: 800;
-
-  color:
-    var(--color-brand-accent);
-
-  letter-spacing:
-    1.4px;
+  color: var(--brand);
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
 }
 
 .banniere-titre {
-  margin:
-    0
-    0
-    8px;
-
-  font-family:
-    var(--font-family-base);
-
-  font-size: 23px;
-
-  line-height: 1.3;
-
+  margin: 0 0 10px;
+  font-size: 22px;
   font-weight: 800;
-
-  color:
-    var(--color-white);
+  line-height: 1.25;
+  color: #FFFFFF;
+  letter-spacing: -0.5px;
 }
 
 .banniere-description {
   max-width: 560px;
-
   margin: 0;
-
-  font-size: 13px;
-
-  line-height: 1.6;
-
-  color: #9ca3af;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #9CA3AF;
 }
 
 .banniere-action {
   display: flex;
+  align-items: center;
 }
 
 .bouton-proposer-trajet {
   width: 100%;
-
-  min-height: 54px;
-
+  min-height: 50px;
   display: inline-flex;
-
   align-items: center;
   justify-content: center;
-
   gap: 10px;
-
-  padding:
-    14px
-    24px;
-
+  padding: 12px 26px;
   border: none;
-
-  border-radius:
-    var(--radius-full);
-
-  background:
-    var(--color-white);
-
-  color:
-    var(--color-black);
-
-  font-family:
-    var(--font-family-base);
-
+  border-radius: 9999px;
+  background-color: #FFFFFF;
+  color: #111627;
   font-size: 15px;
-
-  font-weight: 700;
-
+  font-weight: 800;
   cursor: pointer;
-
-  box-shadow: none;
-
-  transition:
-    background-color
-      var(--transition-fast),
-    transform
-      var(--transition-fast);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.06);
+  transition: all 0.2s ease;
+  font-family: inherit;
 }
 
 .bouton-proposer-trajet:hover {
-  background:
-    #fafafa;
-
-  transform:
-    translateY(-1px);
-
-  box-shadow: none;
+  background-color: #F9FAFB;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.07);
 }
 
 .icone-plus-orange {
-  color:
-    var(--color-brand-accent);
-
+  color: var(--brand);
   font-size: 20px;
-
+  font-weight: 900;
   line-height: 1;
+}
 
-  font-weight: 800;
+.texte-proposer-trajet {
+  color: #111627;
 }
 
 .fleche-chevron {
-  margin-left: 4px;
-
-  color:
-    var(--color-brand-accent);
-
+  color: var(--brand);
   font-size: 20px;
-
+  font-weight: 800;
+  margin-left: 2px;
   line-height: 1;
-
-  font-weight: 700;
 }
 
-
-/* =======================================================
-   11. CARROUSEL
-======================================================= */
-
-.section-carrousel-bloc {
-  width: 100%;
-
-  display: flex;
-
-  flex-direction: column;
-
-  gap: 15px;
-}
-
-
-/* =======================================================
-   12. TABLET
-======================================================= */
-
-@media (min-width: 600px) {
-
-  .page-accueil {
-    width: 100%;
-  }
-
-  :deep(.published-trip-badge) {
-    margin-top: 14px;
-
-    margin-bottom: 30px;
-  }
-
-  .conteneur-principal {
-    gap: 46px;
-  }
-
-  .carte-recherche-sombre-mobile {
-    padding:
-      24px
-      20px
-      20px;
-  }
-
-  .ligne-selecteurs {
-    gap: 12px;
-
-    margin-top: 20px;
-  }
-
-  .section-trajets-populaires {
-    gap: 16px;
-  }
-
-  .titre-section {
-    font-size: 14px;
-  }
-
-  .lien-voir-tout {
-    font-size: 12px;
-  }
-}
-
-
-/* =======================================================
-   13. DESKTOP
-======================================================= */
-
-@media (min-width: 1024px) {
-
-  .navbar-desktop {
-    display: block;
-  }
-
-  .barre-recherche-mobile {
-    display: none;
-  }
-
-  /*
-   * Le badge de trajet publié est une information
-   * spécifique à l'accueil mobile dans cette maquette.
-   */
-  :deep(.published-trip-badge) {
-    display: none;
-  }
-
-  .hero-banniere-desktop {
-    display: block;
-  }
-
-  .conteneur-principal {
-    width: 100%;
-
-    max-width: 1200px;
-
-    padding:
-      52px
-      24px
-      72px;
-
-    gap: 52px;
-  }
-
-  .grille-trajets {
-    display: grid;
-
-    grid-template-columns:
-      repeat(
-        2,
-        minmax(0, 1fr)
-      );
-
-    gap: 24px;
+@media (min-width: 768px) {
+  .banniere-conducteur-large {
+    padding: 34px 38px;
   }
 
   .banniere-corps {
     flex-direction: row;
-
     align-items: center;
-
     justify-content: space-between;
-
     gap: 32px;
+  }
 
-    padding:
-      12px
-      16px;
+  .banniere-titre {
+    font-size: 25px;
   }
 
   .bouton-proposer-trajet {
     width: auto;
-
     min-width: 220px;
-  }
-
-  .titre-section {
-    font-size: 16px;
-  }
-
-  .lien-voir-tout {
-    font-size: 14px;
-  }
-}
-
-
-/* =======================================================
-   14. GRAND DESKTOP
-======================================================= */
-
-@media (min-width: 1280px) {
-
-  .conteneur-principal {
-    padding-left: 24px;
-
-    padding-right: 24px;
-  }
-
-  .grille-trajets {
-    grid-template-columns:
-      repeat(
-        2,
-        minmax(0, 1fr)
-      );
-  }
-}
-
-
-/* =======================================================
-   15. MOBILE
-======================================================= */
-
-@media (max-width: 520px) {
-
-  .page-accueil {
-    width: 100%;
-
-    min-width: 0;
-
-    overflow-x: hidden;
-  }
-
-  /*
-   * Le badge est visuellement séparé de
-   * la carte de recherche.
-   */
-  :deep(.published-trip-badge) {
-    width: calc(100% - 32px);
-
-    margin-top: 10px;
-
-    margin-bottom: 28px;
-  }
-
-  .barre-recherche-mobile {
-    padding:
-      10px
-      16px
-      8px;
-  }
-
-  .destination-barre {
-    min-height: 56px;
-
-    padding:
-      8px
-      11px;
-
-    gap: 9px;
-  }
-
-  .icone-recherche-carre {
-    width: 38px;
-    height: 38px;
-
-    flex-basis: 38px;
-  }
-
-  .destination-label {
-    font-size: 8px;
-  }
-
-  .destination-titre {
-    font-size: 14px;
-  }
-
-
-  /* -------------------------------------------------------
-     MAIN
-  ------------------------------------------------------- */
-
-  .conteneur-principal {
-    width: 100%;
-
-    max-width: 500px;
-
-    padding:
-      0
-      16px
-      32px;
-
-    /*
-     * Interface volontairement plus aérée.
-     */
-    gap: 46px;
-  }
-
-
-  /* -------------------------------------------------------
-     SEARCH CARD
-  ------------------------------------------------------- */
-
-  .carte-recherche-sombre-mobile {
-    padding:
-      21px
-      16px
-      17px;
-
-    border-radius: 26px;
-
-    box-shadow:
-      0 3px 10px
-      rgba(
-        17,
-        22,
-        39,
-        0.065
-      );
-  }
-
-  .ligne-lieu {
-    gap: 10px;
-  }
-
-  .pastille-icone {
-    width: 30px;
-    height: 30px;
-
-    flex-basis: 30px;
-  }
-
-  .label-champ {
-    font-size: 9px;
-  }
-
-  .input-transparent {
-    font-size: 14px;
-  }
-
-  .liaison-verticale {
-    height: 20px;
-
-    margin-left: 14px;
-  }
-
-
-  /* -------------------------------------------------------
-     SELECTEURS
-  ------------------------------------------------------- */
-
-  .ligne-selecteurs {
-    grid-template-columns:
-      minmax(0, 1fr)
-      minmax(0, 1fr);
-
-    gap: 10px;
-
-    margin-top: 19px;
-  }
-
-  .selecteur-case {
-    min-height: 61px;
-
-    padding:
-      10px
-      11px;
-
-    border-radius: 16px;
-  }
-
-  .selecteur-label {
-    font-size: 8px;
-  }
-
-  .selecteur-valeur {
-    margin-top: 6px;
-
-    gap: 6px;
-
-    font-size: 13px;
-  }
-
-  .input-date-mobile {
-    font-size: 12px;
-  }
-
-
-  /* -------------------------------------------------------
-     COMPTEUR MOBILE
-  ------------------------------------------------------- */
-
-  .controle-passagers-mobile {
-    min-height: 29px;
-
-    padding:
-      3px
-      4px;
-  }
-
-  .compteur-passager-bouton-mobile {
-    width: 22px;
-    height: 22px;
-
-    flex-basis: 22px;
-  }
-
-  .compteur-passager-valeur-mobile {
-    min-width: 24px;
-
-    font-size: 12px;
-  }
-
-
-  /* -------------------------------------------------------
-     ACTIONS
-  ------------------------------------------------------- */
-
-  .actions-recherche {
-    gap: 11px;
-
-    margin-top: 22px;
-  }
-
-  .bouton-rechercher {
-    height: 51px;
-
-    border-radius: 16px;
-  }
-
-  .bouton-recherche-vocale {
-    height: 49px;
-
-    border-radius: 16px;
-
-    font-size: 13px;
-  }
-
-
-  /* -------------------------------------------------------
-     POPULAIRES
-  ------------------------------------------------------- */
-
-  .section-trajets-populaires {
-    gap: 14px;
-
-    margin-top: 0;
-
-    margin-bottom: 6px;
-  }
-
-  .entete-section {
-    gap: 10px;
-  }
-
-  .titre-section {
-    font-size: 11px;
-  }
-
-  .lien-voir-tout {
-    font-size: 10px;
-  }
-
-  .grille-trajets {
-    gap: 15px;
-  }
-
-
-  /* -------------------------------------------------------
-     BANNIÈRE
-  ------------------------------------------------------- */
-
-  .banniere-conducteur-large {
-    padding:
-      28px
-      18px;
-
-    border-radius: 25px;
-
-    box-shadow:
-      0 6px 14px
-      rgba(
-        17,
-        22,
-        39,
-        0.085
-      );
-  }
-
-  .banniere-corps {
-    gap: 24px;
-  }
-
-
-  /* -------------------------------------------------------
-     CARROUSEL
-  ------------------------------------------------------- */
-
-  .section-carrousel-bloc {
-    gap: 14px;
-  }
-}
-
-
-/* =======================================================
-   16. TRÈS PETIT MOBILE
-======================================================= */
-
-@media (max-width: 360px) {
-
-  .barre-recherche-mobile {
-    padding-left: 12px;
-
-    padding-right: 12px;
-  }
-
-  :deep(.published-trip-badge) {
-    width: calc(100% - 24px);
-
-    margin-top: 8px;
-
-    margin-bottom: 25px;
-  }
-
-  .conteneur-principal {
-    padding-left: 12px;
-
-    padding-right: 12px;
-
-    gap: 42px;
-  }
-
-  .carte-recherche-sombre-mobile {
-    padding:
-      19px
-      14px
-      15px;
-
-    border-radius: 24px;
-  }
-
-  .input-transparent {
-    font-size: 13px;
-  }
-
-  .ligne-selecteurs {
-    gap: 8px;
-  }
-
-  .selecteur-case {
-    padding:
-      9px
-      10px;
-  }
-
-  .selecteur-valeur {
-    font-size: 12px;
-  }
-
-  .input-date-mobile {
-    font-size: 11px;
-  }
-
-  .compteur-passager-bouton-mobile {
-    width: 21px;
-    height: 21px;
-
-    flex-basis: 21px;
-  }
-
-  .compteur-passager-valeur-mobile {
-    font-size: 11px;
-  }
-
-  .bouton-recherche-vocale {
-    font-size: 12px;
-  }
-
-  .titre-section {
-    font-size: 10px;
-  }
-
-  .lien-voir-tout {
-    font-size: 9px;
-  }
-}
-
-.passenger-counter {
-  width: 100%;
-  min-height: 32px;
-
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-
-  gap: 8px;
-
-  padding-left: 8px;
-  padding-right: 4px;
-
-  border-radius: 999px;
-
-  background: #ffffff;
-
-  border: 1px solid #ffffff;
-}
-
-.passenger-counter-value {
-  min-width: 28px;
-
-  color: #111627;
-
-  font-family:
-    var(--font-family-base);
-
-  font-size: 13px;
-
-  line-height: 1;
-
-  font-weight: 800;
-
-  text-align: center;
-}
-
-.passenger-counter-controls {
-  width: 22px;
-
-  display: flex;
-  flex-direction: column;
-
-  align-items: center;
-  justify-content: center;
-}
-
-.passenger-counter-button {
-  width: 10px;
-  height: 14px;
-
-  padding: 0;
-
-  display: flex;
-  align-items: center;
-  justify-content: center;
-
-  border: 0;
-
-  background: transparent;
-
-  color: #6b7280;
-
-  cursor: pointer;
-
-  transition:
-    color 160ms ease,
-    opacity 160ms ease;
-}
-
-.passenger-counter-button:hover:not(:disabled) {
-  color: var(--color-brand-accent);
-}
-
-.passenger-counter-button:active:not(:disabled) {
-  transform: scale(0.9);
-}
-
-.passenger-counter-button:disabled {
-  opacity: 0.25;
-
-  cursor: not-allowed;
-}
-
-.passenger-counter-button svg {
-  width: 12px;
-  height: 12px;
-
-  fill: none;
-
-  stroke: currentColor;
-
-  stroke-width: 2.2;
-
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-@media (max-width: 520px) {
-  .passenger-counter {
-    min-height: 30px;
-
-    gap: 6px;
-
-    padding-left: 7px;
-    padding-right: 3px;
-  }
-
-  .passenger-counter-value {
-    min-width: 25px;
-
-    font-size: 12px;
-  }
-
-  .passenger-counter-controls {
-    width: 20px;
-  }
-
-  .passenger-counter-button {
-    width: 18px;
-    height: 13px;
-  }
-
-  .passenger-counter-button svg {
-    width: 10px;
-    height: 10px;
   }
 }
 </style>

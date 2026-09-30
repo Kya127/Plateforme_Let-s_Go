@@ -313,13 +313,13 @@
   color: var(--color-white);
   border-color: var(--color-brand-accent);
   transform: translateY(-2px);
-  box-shadow: 0 6px 14px rgba(255, 77, 45, 0.35);
+  box-shadow: 0 6px 14px rgba(255, 77, 45, 0.12);
 }
 
 .lien-whatsapp:hover {
   background-color: #25D366;
   border-color: #25D366;
-  box-shadow: 0 6px 14px rgba(37, 211, 102, 0.35);
+  box-shadow: 0 6px 14px rgba(37, 211, 102, 0.12);
 }
 
 .contact-direct {

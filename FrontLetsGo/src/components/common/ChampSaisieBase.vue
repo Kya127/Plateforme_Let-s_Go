@@ -276,7 +276,7 @@ function basculerVisibiliteMotDePasse() {
 
 .a-une-erreur .champ-enveloppe:focus-within {
   border-color: var(--color-error);
-  box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.12);
+  box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.07);
 }
 
 .champ-erreur-msg {

@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 
 const diapositives = [
   {
@@ -34,33 +34,83 @@ const diapositives = [
   },
 ]
 
-const indexActif = ref(0)
+// Liste étendue pour défilement circulaire infini sans à-coups (clone du dernier au début, clone du premier à la fin)
+const diapositivesEtendues = computed(() => {
+  if (diapositives.length <= 1) return diapositives
+  return [
+    diapositives[diapositives.length - 1],
+    ...diapositives,
+    diapositives[0],
+  ]
+})
+
+// Index courant dans la liste étendue (commence à 1 = premier élément réel)
+const indexEtendu = ref(1)
+const activerTransition = ref(true)
+const enTransition = ref(false)
 let minuteurDefilement = null
 
-function allerPrecedent() {
-  if (indexActif.value > 0) {
-    indexActif.value--
-  } else {
-    indexActif.value = diapositives.length - 1
-  }
-}
+// Index réel pour les points de pagination (0 à 2)
+const indexReel = computed(() => {
+  if (indexEtendu.value === 0) return diapositives.length - 1
+  if (indexEtendu.value === diapositivesEtendues.value.length - 1) return 0
+  return indexEtendu.value - 1
+})
 
 function allerSuivant() {
-  if (indexActif.value < diapositives.length - 1) {
-    indexActif.value++
-  } else {
-    indexActif.value = 0
-  }
+  if (enTransition.value) return
+  enTransition.value = true
+  activerTransition.value = true
+  indexEtendu.value++
+}
+
+function allerPrecedent() {
+  if (enTransition.value) return
+  enTransition.value = true
+  activerTransition.value = true
+  indexEtendu.value--
+}
+
+function allerSuivantManuellement() {
+  allerSuivant()
+  reinitialiserTimer()
+}
+
+function allerPrecedentManuellement() {
+  allerPrecedent()
+  reinitialiserTimer()
 }
 
 function definirDiapositive(index) {
-  indexActif.value = index
+  if (enTransition.value) return
+  enTransition.value = true
+  activerTransition.value = true
+  indexEtendu.value = index + 1
+  reinitialiserTimer()
 }
 
+function onTransitionEnd() {
+  enTransition.value = false
+  // Rebouclage instantané et invisible aux extrémités
+  if (indexEtendu.value >= diapositivesEtendues.value.length - 1) {
+    activerTransition.value = false
+    indexEtendu.value = 1
+  } else if (indexEtendu.value <= 0) {
+    activerTransition.value = false
+    indexEtendu.value = diapositives.length
+  }
+}
+
+/* =========================================================
+   AUTOPLAY GENTLE & FIABLE
+========================================================= */
+const DELAI_DEFILEMENT = 3800 // 3.8s par diapositive pour un rythme dynamique et lisible
+
 function demarrerDefilementAutomatique() {
+  arreterDefilementAutomatique()
   minuteurDefilement = setInterval(() => {
     allerSuivant()
-  }, 4500)
+  }, DELAI_DEFILEMENT)
 }
 
 function arreterDefilementAutomatique() {
@@ -70,77 +120,146 @@ function arreterDefilementAutomatique() {
   }
 }
 
+function reinitialiserTimer() {
+  demarrerDefilementAutomatique()
+}
+
+// Pause délicate au survol mais reprise automatique
+function onMouseEnter() {
+  arreterDefilementAutomatique()
+}
+
+function onMouseLeave() {
+  demarrerDefilementAutomatique()
+}
+
+function onVisibilityChange() {
+  if (document.hidden) {
+    arreterDefilementAutomatique()
+  } else {
+    demarrerDefilementAutomatique()
+  }
+}
+
+/* =========================================================
+   SUPPORT DU GESTE TACTILE (SWIPE MOBILE)
+========================================================= */
+let touchStartX = 0
+let touchEndX = 0
+
+function onTouchStart(e) {
+  if (!e.changedTouches || e.changedTouches.length === 0) return
+  touchStartX = e.changedTouches[0].screenX
+  arreterDefilementAutomatique()
+}
+
+function onTouchEnd(e) {
+  if (!e.changedTouches || e.changedTouches.length === 0) return
+  touchEndX = e.changedTouches[0].screenX
+  const diff = touchEndX - touchStartX
+  if (Math.abs(diff) > 40) {
+    if (diff < 0) {
+      allerSuivantManuellement()
+    } else {
+      allerPrecedentManuellement()
+    }
+  } else {
+    demarrerDefilementAutomatique()
+  }
+}
+
 onMounted(() => {
   demarrerDefilementAutomatique()
+  document.addEventListener('visibilitychange', onVisibilityChange)
 })
 
 onUnmounted(() => {
   arreterDefilementAutomatique()
+  document.removeEventListener('visibilitychange', onVisibilityChange)
 })
 </script>
 
 <template>
   <section
     class="carrousel-section"
-    @mouseenter="arreterDefilementAutomatique"
-    @mouseleave="demarrerDefilementAutomatique"
+    @mouseenter="onMouseEnter"
+    @mouseleave="onMouseLeave"
+    @touchstart.passive="onTouchStart"
+    @touchend.passive="onTouchEnd"
   >
-    <!-- Conteneur de la carte active -->
+    <!-- Conteneur principal de la carte -->
     <div class="carte-carrousel">
-      <!-- Image avec bouton de navigation superposé -->
-      <div class="visuel-cadre">
-        <img
-          :src="diapositives[indexActif].image"
-          :alt="diapositives[indexActif].titre"
-          class="visuel-image"
-        />
-
-        <!-- Bouton flèche droite (comme dans la maquette) -->
-        <button
-          type="button"
-          class="bouton-nav bouton-nav-suivant"
-          aria-label="Diapositive suivante"
-          @click="allerSuivant"
+      <!-- Piste fluide qui défile horizontalement -->
+      <div
+        class="carrousel-piste"
+        :class="{ 'avec-transition': activerTransition }"
+        :style="{ transform: `translateX(-${indexEtendu * 100}%)` }"
+        @transitionend="onTransitionEnd"
+      >
+        <article
+          v-for="(diapo, index) in diapositivesEtendues"
+          :key="`${diapo.id}-${index}`"
+          class="diapositive-item"
         >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-            <polyline points="9 18 15 12 9 6" />
-          </svg>
-        </button>
+          <!-- Visuel Image -->
+          <div class="visuel-cadre">
+            <img
+              :src="diapo.image"
+              :alt="diapo.titre"
+              class="visuel-image"
+              loading="lazy"
+            />
+          </div>
 
-        <button
-          type="button"
-          class="bouton-nav bouton-nav-precedent"
-          aria-label="Diapositive précédente"
-          @click="allerPrecedent"
-        >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-            <polyline points="15 18 9 12 15 6" />
-          </svg>
-        </button>
+          <!-- Contenu textuel -->
+          <div class="contenu-diapositive">
+            <div class="entete-diapositive">
+              <span class="categorie-texte">{{ diapo.categorie }}</span>
+              <span :class="['badge-tag', `badge-${diapo.badgeCouleur}`]">
+                {{ diapo.badge }}
+              </span>
+            </div>
+
+            <h3 class="titre-diapositive">{{ diapo.titre }}</h3>
+            <p class="soustitre-diapositive">{{ diapo.sousTitre }}</p>
+            <p class="description-diapositive">{{ diapo.description }}</p>
+          </div>
+        </article>
       </div>
 
-      <!-- Contenu textuel sous l'image -->
-      <div class="contenu-diapositive">
-        <div class="entete-diapositive">
-          <span class="categorie-texte">{{ diapositives[indexActif].categorie }}</span>
-          <span :class="['badge-tag', `badge-${diapositives[indexActif].badgeCouleur}`]">
-            {{ diapositives[indexActif].badge }}
-          </span>
-        </div>
+      <!-- Boutons de navigation (Chevrons) positionnés au premier plan -->
+      <button
+        type="button"
+        class="bouton-nav bouton-nav-precedent"
+        aria-label="Diapositive précédente"
+        @click="allerPrecedentManuellement"
+      >
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="15 18 9 12 15 6" />
+        </svg>
+      </button>
 
-        <h3 class="titre-diapositive">{{ diapositives[indexActif].titre }}</h3>
-        <p class="soustitre-diapositive">{{ diapositives[indexActif].sousTitre }}</p>
-        <p class="description-diapositive">{{ diapositives[indexActif].description }}</p>
-      </div>
+      <button
+        type="button"
+        class="bouton-nav bouton-nav-suivant"
+        aria-label="Diapositive suivante"
+        @click="allerSuivantManuellement"
+      >
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="9 18 15 12 9 6" />
+        </svg>
+      </button>
 
       <!-- Indicateurs de pagination (Dots) -->
       <div class="indicateurs-carrousel">
-        <span
+        <button
           v-for="(diapo, index) in diapositives"
           :key="diapo.id"
-          :class="['indicateur-point', { 'est-actif': index === indexActif }]"
+          type="button"
+          :class="['indicateur-point', { 'est-actif': index === indexReel }]"
+          :aria-label="`Aller à la diapositive ${index + 1}`"
           @click="definirDiapositive(index)"
-        ></span>
+        ></button>
       </div>
     </div>
   </section>
@@ -150,75 +269,103 @@ onUnmounted(() => {
 .carrousel-section {
   width: 100%;
   margin: 18px 0 28px;
+  user-select: none;
 }
 
+/* Carte / Fenêtre d'affichage */
 .carte-carrousel {
-  background: var(--color-white);
+  background: #FFFFFF;
   border-radius: 24px;
   overflow: hidden;
-  box-shadow: 0 12px 30px -8px rgba(17, 24, 39, 0.07);
-  border: 1px solid rgba(229, 231, 235, 0.7);
-  display: flex;
-  flex-direction: column;
+  box-shadow: 0 4px 14px rgba(17, 24, 39, 0.03);
+  border: 1px solid rgba(229, 231, 235, 0.8);
   position: relative;
-  transition: transform var(--transition-fast);
 }
 
+/* Piste de défilement horizontal fluide */
+.carrousel-piste {
+  display: flex;
+  width: 100%;
+  will-change: transform;
+}
+
+.carrousel-piste.avec-transition {
+  transition: transform 0.65s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Diapositive individuelle */
+.diapositive-item {
+  width: 100%;
+  flex: 0 0 100%;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+}
+
+/* Cadre de l'image */
 .visuel-cadre {
   position: relative;
   width: 100%;
-  height: 200px;
+  height: 210px;
   overflow: hidden;
-  background-color: #f3f4f6;
+  background-color: #F3F4F6;
 }
 
 .visuel-image {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  transition: transform 0.4s ease;
+  transition: transform 0.5s ease;
 }
 
 .carte-carrousel:hover .visuel-image {
-  transform: scale(1.02);
+  transform: scale(1.03);
 }
 
-/* Boutons de navigation */
+/* Boutons de navigation chevrons */
 .bouton-nav {
   position: absolute;
-  top: 50%;
+  top: 105px;
   transform: translateY(-50%);
-  width: 36px;
-  height: 36px;
+  width: 38px;
+  height: 38px;
   border-radius: 50%;
-  background-color: rgba(255, 255, 255, 0.92);
-  border: 1px solid rgba(229, 231, 235, 0.8);
-  color: var(--color-brand-accent);
+  background-color: rgba(255, 255, 255, 0.94);
+  border: 1px solid rgba(229, 231, 235, 0.9);
+  color: #FF4D2D;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
-  transition: all var(--transition-fast);
-  z-index: 2;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  transition: all 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+  z-index: 10;
 }
 
 .bouton-nav:hover {
-  background-color: var(--color-white);
-  transform: translateY(-50%) scale(1.08);
+  background-color: #FFFFFF;
+  color: #E03E20;
+  transform: translateY(-50%) scale(1.1);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
 }
 
-.bouton-nav-suivant {
-  right: 12px;
+.bouton-nav:active {
+  transform: translateY(-50%) scale(0.96);
 }
 
 .bouton-nav-precedent {
   left: 12px;
 }
 
-/* Contenu */
+.bouton-nav-suivant {
+  right: 12px;
+}
+
+/* Contenu textuel */
 .contenu-diapositive {
-  padding: 20px 20px 14px;
+  padding: 20px 22px 18px;
+  display: flex;
+  flex-direction: column;
 }
 
 .entete-diapositive {
@@ -231,7 +378,7 @@ onUnmounted(() => {
 .categorie-texte {
   font-size: 11px;
   font-weight: 700;
-  color: var(--color-text-muted);
+  color: #9CA3AF;
   letter-spacing: 0.8px;
   text-transform: uppercase;
 }
@@ -240,13 +387,13 @@ onUnmounted(() => {
   font-size: 11px;
   font-weight: 800;
   padding: 4px 10px;
-  border-radius: var(--radius-full);
+  border-radius: 9999px;
   letter-spacing: 0.4px;
 }
 
 .badge-rouge {
   background-color: #FEF2F2;
-  color: var(--color-brand-accent);
+  color: #FF4D2D;
 }
 
 .badge-orange {
@@ -260,56 +407,66 @@ onUnmounted(() => {
 }
 
 .titre-diapositive {
-  font-family: var(--font-family-base);
+  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
   font-size: 20px;
   font-weight: 800;
-  color: var(--color-black);
-  margin-bottom: 4px;
+  color: #111827;
+  margin: 0 0 4px 0;
+  line-height: 1.25;
 }
 
 .soustitre-diapositive {
   font-size: 13px;
   font-weight: 600;
-  color: var(--color-text-secondary);
-  margin-bottom: 8px;
+  color: #6B7280;
+  margin: 0 0 8px 0;
 }
 
 .description-diapositive {
   font-size: 13.5px;
-  line-height: 1.5;
+  line-height: 1.55;
   color: #4B5563;
+  margin: 0;
 }
 
-/* Indicateurs */
+/* Indicateurs de pagination (Dots) */
 .indicateurs-carrousel {
   display: flex;
   justify-content: center;
   align-items: center;
   gap: 6px;
-  padding-bottom: 16px;
+  padding: 8px 0 16px;
 }
 
 .indicateur-point {
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
-  background-color: var(--color-soft-gray);
+  border: none;
+  background-color: #E2E8F0;
   cursor: pointer;
-  transition: all var(--transition-fast);
+  padding: 0;
+  transition: all 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.indicateur-point:hover {
+  background-color: #CBD5E1;
 }
 
 .indicateur-point.est-actif {
-  width: 20px;
-  border-radius: var(--radius-full);
-  background-color: var(--color-brand-accent);
+  width: 22px;
+  border-radius: 9999px;
+  background-color: #FF4D2D;
 }
 
-/* Adaptation Desktop */
+/* =========================================================
+   ADAPTATION DESKTOP (≥ 1024px)
+========================================================= */
 @media (min-width: 1024px) {
-  .carte-carrousel {
+  .diapositive-item {
     flex-direction: row;
     align-items: center;
-    min-height: 280px;
+    min-height: 300px;
   }
 
   .visuel-cadre {
@@ -318,9 +475,22 @@ onUnmounted(() => {
     flex-shrink: 0;
   }
 
+  /* Sur desktop, les chevrons sont centrés sur toute la hauteur */
+  .bouton-nav {
+    top: 50%;
+  }
+
+  .bouton-nav-precedent {
+    left: 14px;
+  }
+
+  .bouton-nav-suivant {
+    right: 14px;
+  }
+
   .contenu-diapositive {
     flex: 1;
-    padding: 36px 40px;
+    padding: 36px 44px;
   }
 
   .titre-diapositive {
@@ -330,7 +500,7 @@ onUnmounted(() => {
 
   .soustitre-diapositive {
     font-size: 15px;
-    margin-bottom: 14px;
+    margin-bottom: 12px;
   }
 
   .description-diapositive {
@@ -340,9 +510,9 @@ onUnmounted(() => {
 
   .indicateurs-carrousel {
     position: absolute;
-    bottom: 16px;
-    right: 40px;
-    padding-bottom: 0;
+    bottom: 20px;
+    right: 44px;
+    padding: 0;
   }
 }
 </style>

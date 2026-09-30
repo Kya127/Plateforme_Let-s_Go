@@ -17,10 +17,8 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import path, include
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView, SpectacularRedocView
-from rest_framework_simplejwt.views import (
-    TokenObtainPairView,
-    TokenRefreshView,
-)
+from rest_framework_simplejwt.views import TokenRefreshView
+from accounts.views import CustomTokenObtainPairView
 from django.conf import settings
 from django.conf.urls.static import static
 
@@ -28,14 +26,15 @@ from django.conf.urls.static import static
 urlpatterns = [
     path('admin/', admin.site.urls),
 
-    # Endpoints Authentification JWT
+    # Endpoints Authentification JWT (support Email et Téléphone sénégalais)
     path('api/auth/', include('accounts.urls')),
-    path('api/auth/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
+    path('api/auth/token/', CustomTokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('api/voitures/', include('voitures.urls')),
     path('api/trajets/', include('trajets.urls')),
     path('api/reservations/', include('reservations.urls')),
     path('api/avis/', include('evaluations.urls')),
+    path('api/commissions/', include('commission.urls')),
 
     # Documentation Swagger / OpenAPI
     path('api/schema/', SpectacularAPIView.as_view(), name='schema'),

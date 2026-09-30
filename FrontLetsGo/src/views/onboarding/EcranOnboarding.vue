@@ -186,7 +186,7 @@ function definirEtape(index) {
   aspect-ratio: 1 / 1;
   border-radius: 28px;
   overflow: hidden;
-  box-shadow: 0 16px 36px -12px rgba(17, 22, 39, 0.12);
+  box-shadow: 0 16px 36px -12px rgba(17, 22, 39, 0.07);
   background-color: #f8fafc;
 }
 

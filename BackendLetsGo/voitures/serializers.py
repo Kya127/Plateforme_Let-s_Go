@@ -18,7 +18,5 @@ class VoitureSerializer(serializers.ModelSerializer):
         read_only_fields = ('id', 'date_creation')
 
     def validate(self, attrs):
-        user = self.context['request'].user
-        if not user.is_verified:
-            raise serializers.ValidationError("Seuls les conducteurs vérifiés  peuvent ajouter un véhicule.")
+        # L'utilisateur connecté peut enregistrer son véhicule lors de son onboarding
         return attrs

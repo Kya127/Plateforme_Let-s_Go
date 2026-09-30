@@ -80,10 +80,10 @@
   --lh-20: 1.25rem;
   --lh-28: 1.75rem;
 
-  /* Shadows */
-  --shadow-accent: 0 10px 25px -4px rgba(255, 77, 45, 0.35);
-  --shadow-card: 0 10px 30px -5px rgba(17, 22, 39, 0.06), 0 4px 6px -2px rgba(17, 22, 39, 0.02);
-  --shadow-hover: 0 12px 28px -4px rgba(255, 77, 45, 0.45);
+  /* Shadows (Finement calibrées et allégées pour un rendu épuré et moderne) */
+  --shadow-accent: 0 3px 10px rgba(255, 77, 45, 0.12);
+  --shadow-card: 0 2px 8px rgba(17, 22, 39, 0.025);
+  --shadow-hover: 0 4px 14px rgba(255, 77, 45, 0.16);
 
   /* Transitions */
   --transition-fast: 0.18s ease;

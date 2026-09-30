@@ -160,12 +160,7 @@ const handleClick = () => {
 
   box-shadow:
     0 7px 18px
-    rgba(
-      17,
-      22,
-      39,
-      0.06
-    );
+    rgba(17, 22, 39, 0.042);
 
   transition:
     transform 180ms ease,
@@ -189,12 +184,7 @@ const handleClick = () => {
 
   box-shadow:
     0 9px 20px
-    rgba(
-      17,
-      22,
-      39,
-      0.07
-    );
+    rgba(17, 22, 39, 0.049);
 }
 
 .published-trip-badge:active {

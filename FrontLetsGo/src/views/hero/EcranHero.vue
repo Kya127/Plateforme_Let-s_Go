@@ -241,7 +241,7 @@ function naviguerVersConnexion() {
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border: 1px solid rgba(255, 255, 255, 0.15);
-  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.12);
   margin-bottom: 24px;
 }
 

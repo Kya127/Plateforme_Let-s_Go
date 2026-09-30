@@ -1,16 +1,16 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthentificationStore } from '@/stores/authentification'
+import { serviceTrajets } from '@/services/api'
+import CarteTrajetConducteur from '@/components/conducteur/CarteTrajetConducteur.vue'
 
 const routeur = useRouter()
 const storeAuth = useAuthentificationStore()
 
-// Si l'utilisateur n'est pas connecté, on le connecte avec le profil Thomas par défaut pour la démo
-if (!storeAuth.estConnecte) {
-  storeAuth.connecter('thomas.meyer@letsgo.sn')
-}
-
+/* =========================================================
+   GESTION DES ONGLETS
+========================================================= */
 const ongletActif = ref('a-venir')
 
 const onglets = [
@@ -23,38 +23,135 @@ function changerOnglet(id) {
   ongletActif.value = id
 }
 
+/* =========================================================
+   CHARGEMENT DES TRAJETS CONDUCTEUR
+========================================================= */
+const trajets = ref([])
+const chargement = ref(true)
+
+async function chargerTrajets() {
+  chargement.value = true
+  try {
+    const data = await serviceTrajets.mesTrajets()
+    trajets.value = Array.isArray(data) ? data : []
+  } catch (erreur) {
+    console.error('Erreur chargement mes trajets:', erreur)
+    trajets.value = []
+  } finally {
+    chargement.value = false
+  }
+}
+
+onMounted(() => {
+  chargerTrajets()
+})
+
+/* =========================================================
+   FILTRAGE DES TRAJETS PAR ONGLET
+========================================================= */
+const trajetsFiltres = computed(() => {
+  if (ongletActif.value === 'a-venir') {
+    return trajets.value.filter((t) => t.statut === 'PLANIFIE' || t.statut === 'EN_COURS')
+  }
+  if (ongletActif.value === 'termines') {
+    return trajets.value.filter((t) => t.statut === 'TERMINE')
+  }
+  if (ongletActif.value === 'annules') {
+    return trajets.value.filter((t) => t.statut === 'ANNULE')
+  }
+  return []
+})
+
+// Compteur par statut pour les badges d'onglets
+const compterTrajets = (id) => {
+  if (id === 'a-venir') {
+    return trajets.value.filter((t) => t.statut === 'PLANIFIE' || t.statut === 'EN_COURS').length
+  }
+  if (id === 'termines') {
+    return trajets.value.filter((t) => t.statut === 'TERMINE').length
+  }
+  if (id === 'annules') {
+    return trajets.value.filter((t) => t.statut === 'ANNULE').length
+  }
+  return 0
+}
+
+/* =========================================================
+   NAVIGATION
+========================================================= */
 function demarrerPublicationTrajet() {
-  console.log('Démarrage de la publication de trajet conducteur')
-  // Préparé pour la route de publication quand les prochaines maquettes seront fournies
-  routeur.push('/conducteur/publier')
+  if (storeAuth.utilisateur?.estConducteurVerifie) {
+    routeur.push('/publier-trajet')
+  } else {
+    routeur.push('/conducteur/infos-personnelles')
+  }
+}
+
+function voirDetailTrajet(id) {
+  routeur.push({
+    name: 'vue-trajet-prevu',
+    params: { id },
+  })
+}
+
+/* =========================================================
+   FORMATAGE
+========================================================= */
+function formaterDate(dateStr) {
+  if (!dateStr) return ''
+  const date = new Date(dateStr)
+  if (isNaN(date.getTime())) return dateStr
+  return date.toLocaleDateString('fr-FR', {
+    day: 'numeric',
+    month: 'short',
+  })
+}
+
+function formaterHeure(heureStr) {
+  if (!heureStr) return ''
+  return heureStr.substring(0, 5)
+}
+
+function formaterPrix(prix) {
+  if (!prix) return '0'
+  return Number(prix).toLocaleString('fr-FR')
 }
 </script>
 
 <template>
   <div class="page-tableau-bord">
     <div class="conteneur-conducteur">
-      <!-- En-tête : Bienvenue & Profil -->
+      <!-- En-tête : Salutation & Profil Conducteur -->
       <header class="entete-conducteur">
         <div class="texte-bienvenue">
-          <span class="message-salutation">Content de vous revoir,</span>
+          <span class="message-salutation">Espace Conducteur</span>
           <h1 class="nom-conducteur">
-            Bonjour, {{ storeAuth.utilisateur.prenom }}
-            <span class="icone-salutation" aria-hidden="true">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="#F59E0B">
-                <path d="M12 2a1 1 0 0 1 1 1v7h1V4a1 1 0 0 1 2 0v6h1V6a1 1 0 0 1 2 0v7a6 6 0 0 1-6 6H9.5a5.5 5.5 0 0 1-4.8-2.8l-1.3-2.3a1 1 0 0 1 1.7-1l1.4 1.7V6a1 1 0 0 1 2 0v4h1V3a1 1 0 0 1 1-1h1.5z" />
-              </svg>
-            </span>
+            Bonjour, {{ storeAuth.utilisateur?.prenom || storeAuth.nomAffiche }}
           </h1>
         </div>
 
-        <!-- Avatar avec pastille en ligne -->
-        <div class="enveloppe-avatar">
-          <img
-            :src="storeAuth.utilisateur.photoUrl"
-            :alt="storeAuth.utilisateur.nomComplet"
-            class="avatar-photo"
-          />
-          <span class="pastille-en-ligne" title="En ligne"></span>
+        <div class="actions-profil-conducteur">
+          <button
+            type="button"
+            class="btn-proposer-desktop"
+            @click="demarrerPublicationTrajet"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+            <span>Proposer un trajet</span>
+          </button>
+
+          <!-- Avatar avec pastille en ligne -->
+          <div class="enveloppe-avatar" @click="routeur.push('/accueil')" role="button" title="Retour à l'accueil">
+            <img
+              :src="storeAuth.avatarActif"
+              :alt="storeAuth.utilisateur?.nomComplet || 'Conducteur'"
+              class="avatar-photo"
+            />
+            <span class="pastille-en-ligne" title="En ligne"></span>
+          </div>
         </div>
       </header>
 
@@ -67,36 +164,68 @@ function demarrerPublicationTrajet() {
           :class="['bouton-onglet', { 'est-actif': ongletActif === onglet.id }]"
           @click="changerOnglet(onglet.id)"
         >
-          {{ onglet.libelle }}
+          <span>{{ onglet.libelle }}</span>
+          <span v-if="compterTrajets(onglet.id) > 0" class="badge-compteur">
+            {{ compterTrajets(onglet.id) }}
+          </span>
           <span v-if="ongletActif === onglet.id" class="barre-selection"></span>
         </button>
       </nav>
 
-      <!-- Zone centrale : État vide (Empty State) -->
-      <main class="zone-contenu-vide">
-        <div class="badge-icone-vide">
-          <svg
-            width="32"
-            height="32"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="#9CA3AF"
-            stroke-width="1.8"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          >
-            <path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3 3 0 0 0 2 12v4c0 .6.4 1 1 1h2" />
-            <circle cx="7" cy="17" r="2" />
-            <path d="M9 17h6" />
-            <circle cx="17" cy="17" r="2" />
-          </svg>
+      <!-- Zone centrale : Liste des trajets ou État vide -->
+      <main class="zone-contenu">
+        <!-- État de chargement discret -->
+        <div v-if="chargement" class="zone-chargement">
+          <span class="indicateur-spinner"></span>
+          <p>Chargement de vos trajets...</p>
         </div>
-        <p class="texte-aucun-trajet">
-          Vous n'avez pas de trajets actifs<br />pour le moment.
-        </p>
+
+        <!-- Liste des trajets disponibles dans l'onglet actif -->
+        <div v-else-if="trajetsFiltres.length > 0" class="liste-trajets">
+          <CarteTrajetConducteur
+            v-for="trajet in trajetsFiltres"
+            :key="trajet.id"
+            :trajet="trajet"
+            @voir="voirDetailTrajet"
+          />
+        </div>
+
+        <!-- État vide si aucun trajet dans l'onglet -->
+        <div v-else class="zone-contenu-vide">
+          <div class="badge-icone-vide">
+            <svg
+              width="32"
+              height="32"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="#9CA3AF"
+              stroke-width="1.8"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3 3 0 0 0 2 12v4c0 .6.4 1 1 1h2" />
+              <circle cx="7" cy="17" r="2" />
+              <path d="M9 17h6" />
+              <circle cx="17" cy="17" r="2" />
+            </svg>
+          </div>
+          <p class="texte-aucun-trajet">
+            Vous n'avez pas de trajets
+            {{ ongletActif === 'a-venir' ? 'à venir' : ongletActif === 'termines' ? 'terminés' : 'annulés' }}<br />
+            pour le moment.
+          </p>
+          <button
+            v-if="ongletActif === 'a-venir'"
+            type="button"
+            class="btn-proposer-vide"
+            @click="demarrerPublicationTrajet"
+          >
+            Proposer un trajet
+          </button>
+        </div>
       </main>
 
-      <!-- Grand Bouton d'Action Flottant en bas -->
+      <!-- Bouton d'action "Proposer un trajet" épuré sans effet d'ombre visible -->
       <footer class="pied-actions-conducteur">
         <button
           type="button"
@@ -150,16 +279,16 @@ function demarrerPublicationTrajet() {
 <style scoped>
 .page-tableau-bord {
   min-height: 100vh;
-  background-color: var(--color-white);
+  background-color: var(--color-white, #FFFFFF);
   display: flex;
   justify-content: center;
 }
 
 .conteneur-conducteur {
   width: 100%;
-  max-width: 480px;
+  max-width: 520px;
   min-height: 100vh;
-  padding: 36px 24px 32px;
+  padding: 32px 20px 28px;
   display: flex;
   flex-direction: column;
 }
@@ -169,90 +298,145 @@ function demarrerPublicationTrajet() {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 32px;
+  margin-bottom: 24px;
 }
 
 .message-salutation {
-  font-size: 14px;
-  color: var(--color-text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-secondary, #6B7280);
   display: block;
   margin-bottom: 2px;
 }
 
 .nom-conducteur {
-  font-family: var(--font-family-base);
-  font-size: 26px;
-  font-weight: 800;
-  color: var(--color-black);
-  letter-spacing: -0.5px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.emoji-main {
   font-size: 24px;
+  font-weight: 800;
+  color: var(--color-black, #111827);
+  letter-spacing: -0.4px;
+  margin: 0;
 }
 
 /* Avatar */
 .enveloppe-avatar {
   position: relative;
-  width: 52px;
-  height: 52px;
+  width: 48px;
+  height: 48px;
+  cursor: pointer;
+  flex-shrink: 0;
 }
 
 .avatar-photo {
   width: 100%;
   height: 100%;
-  border-radius: 16px;
+  border-radius: 14px;
   object-fit: cover;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  border: 1px solid rgba(0, 0, 0, 0.08);
 }
 
 .pastille-en-ligne {
   position: absolute;
-  top: -3px;
-  right: -3px;
-  width: 13px;
-  height: 13px;
+  top: -2px;
+  right: -2px;
+  width: 12px;
+  height: 12px;
   border-radius: 50%;
   background-color: #10B981;
-  border: 2.5px solid var(--color-white);
+  border: 2px solid #FFFFFF;
 }
 
 /* Onglets */
 .barre-onglets {
   display: flex;
   border-bottom: 1px solid #E5E7EB;
-  margin-bottom: 40px;
+  margin-bottom: 24px;
+  gap: 8px;
 }
 
 .bouton-onglet {
   position: relative;
   background: transparent;
   border: none;
-  font-family: var(--font-family-base);
   font-size: 15px;
   font-weight: 600;
   color: #9CA3AF;
-  padding: 12px 20px 14px;
+  padding: 10px 14px 14px;
   cursor: pointer;
-  transition: color var(--transition-fast);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: color 0.15s ease;
 }
 
 .bouton-onglet.est-actif {
-  color: var(--color-black);
+  color: #111827;
   font-weight: 700;
+}
+
+.badge-compteur {
+  background-color: #F3F4F6;
+  color: #4B5563;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 10px;
+}
+
+.bouton-onglet.est-actif .badge-compteur {
+  background-color: #FFF1EE;
+  color: var(--color-brand-accent, #FF4D2D);
 }
 
 .barre-selection {
   position: absolute;
   bottom: -1px;
-  left: 18px;
-  right: 18px;
+  left: 10px;
+  right: 10px;
   height: 3px;
-  background-color: var(--color-brand-accent);
+  background-color: var(--color-brand-accent, #FF4D2D);
   border-radius: 3px 3px 0 0;
+}
+
+/* Zone contenu */
+.zone-contenu {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Indicateur de chargement */
+.zone-chargement {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  gap: 12px;
+  color: #9CA3AF;
+  font-size: 14px;
+}
+
+.indicateur-spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid #E5E7EB;
+  border-top-color: var(--color-brand-accent, #FF4D2D);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Liste des cartes trajets */
+.liste-trajets {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-bottom: 20px;
 }
 
 /* Zone vide (Empty State) */
@@ -263,62 +447,60 @@ function demarrerPublicationTrajet() {
   align-items: center;
   justify-content: center;
   text-align: center;
-  padding: 40px 20px;
+  padding: 60px 20px;
 }
 
 .badge-icone-vide {
-  width: 68px;
-  height: 68px;
+  width: 64px;
+  height: 64px;
   border-radius: 50%;
   background-color: #F3F4F6;
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 18px;
+  margin-bottom: 16px;
 }
 
 .texte-aucun-trajet {
-  font-family: var(--font-family-base);
-  font-size: 15px;
+  font-size: 14px;
   line-height: 1.5;
   color: #9CA3AF;
+  margin: 0;
 }
 
-/* Grand Bouton Proposer en bas */
+/* Grand Bouton Proposer en bas (Flat, discret, sans ombre lourde) */
 .pied-actions-conducteur {
   margin-top: auto;
-  padding-top: 20px;
+  padding-top: 16px;
 }
 
 .grand-bouton-proposer {
   width: 100%;
-  background-color: var(--color-brand-accent);
-  border: none;
-  border-radius: 26px;
-  padding: 16px 20px;
+  background-color: var(--color-brand-accent, #FF4D2D);
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  border-radius: 20px;
+  padding: 14px 18px;
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 14px;
   cursor: pointer;
-  box-shadow: 0 14px 28px -6px rgba(255, 77, 45, 0.45);
-  transition: transform var(--transition-fast), box-shadow var(--transition-fast), background-color var(--transition-fast);
+  box-shadow: none;
+  transition: background-color 0.15s ease, transform 0.1s ease;
   text-align: left;
 }
 
 .grand-bouton-proposer:hover {
-  background-color: var(--color-brand-accent-hover);
-  transform: translateY(-2px);
-  box-shadow: 0 18px 32px -6px rgba(255, 77, 45, 0.55);
+  background-color: #E03E20;
 }
 
 .grand-bouton-proposer:active {
-  transform: scale(0.985);
+  transform: scale(0.99);
 }
 
 .carre-icone-plus {
-  width: 48px;
-  height: 48px;
-  border-radius: 16px;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
   background: rgba(255, 255, 255, 0.22);
   display: flex;
   align-items: center;
@@ -333,40 +515,151 @@ function demarrerPublicationTrajet() {
 }
 
 .titre-bouton {
-  font-family: var(--font-family-base);
-  font-size: 18px;
+  font-size: 17px;
   font-weight: 800;
-  color: var(--color-white);
+  color: #FFFFFF;
   line-height: 1.2;
 }
 
 .soustitre-bouton {
   font-size: 13px;
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.88);
-  margin-top: 3px;
+  color: rgba(255, 255, 255, 0.9);
+  margin-top: 2px;
 }
 
 .chevron-droit {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding-right: 4px;
 }
 
-/* Desktop */
-@media (min-width: 640px) and (min-height: 800px) {
+.actions-profil-conducteur {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.btn-proposer-desktop {
+  display: none;
+}
+
+.btn-proposer-vide {
+  margin-top: 18px;
+  background-color: var(--color-brand-accent, #FF4D2D);
+  color: #FFFFFF;
+  border: none;
+  font-size: 14px;
+  font-weight: 700;
+  padding: 10px 20px;
+  border-radius: 12px;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(255, 77, 45, 0.07);
+  transition: all 0.2s ease;
+}
+
+.btn-proposer-vide:hover {
+  background-color: #E03E20;
+  transform: translateY(-1px);
+}
+
+/* Tablet & Desktop Adaptations */
+@media (min-width: 640px) {
   .page-tableau-bord {
-    background-color: var(--color-light-gray);
+    background-color: #F8FAFC;
     padding: 32px 20px;
   }
 
   .conteneur-conducteur {
-    background-color: var(--color-white);
-    border-radius: var(--radius-xl);
-    box-shadow: var(--shadow-card);
-    border: 1px solid rgba(229, 231, 235, 0.6);
-    min-height: 780px;
+    background-color: #FFFFFF;
+    border-radius: 20px;
+    border: 1px solid #E2E8F0;
+    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.014);
+    min-height: 700px;
+  }
+}
+
+@media (min-width: 900px) {
+  .page-tableau-bord {
+    padding: 40px 28px 60px;
+  }
+
+  .conteneur-conducteur {
+    max-width: 1120px;
+    padding: 36px 40px 48px;
+    border-radius: 28px;
+    box-shadow: 0 2px 12px rgba(15, 23, 42, 0.021);
+  }
+
+  .entete-conducteur {
+    margin-bottom: 28px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid #F1F5F9;
+  }
+
+  .nom-conducteur {
+    font-size: 28px;
+    letter-spacing: -0.6px;
+  }
+
+  .btn-proposer-desktop {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background-color: var(--color-brand-accent, #FF4D2D);
+    color: #FFFFFF;
+    font-size: 14px;
+    font-weight: 700;
+    padding: 10px 18px;
+    border-radius: 12px;
+    border: none;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(255, 77, 45, 0.08);
+    transition: all 0.2s ease;
+  }
+
+  .btn-proposer-desktop:hover {
+    background-color: #E03E20;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(255, 77, 45, 0.1);
+  }
+
+  .btn-proposer-desktop:active {
+    transform: scale(0.98);
+  }
+
+  .liste-trajets {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(460px, 1fr));
+    gap: 20px;
+    align-items: stretch;
+  }
+
+  .carte-trajet-conducteur {
+    padding: 20px;
+    border-radius: 20px;
+    border: 1.5px solid #EDF2F7;
+    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.014);
+    transition: border-color 0.15s ease, background-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+  }
+
+  .carte-trajet-conducteur:hover {
+    border-color: #CBD5E1;
+    background-color: #FAFAFA;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 14px rgba(15, 23, 42, 0.021);
+  }
+
+  .nom-lieu {
+    font-size: 16px;
+  }
+
+  .prix-trajet {
+    font-size: 17px;
+  }
+
+  .pied-actions-conducteur {
+    display: none;
   }
 }
 </style>

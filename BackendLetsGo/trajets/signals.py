@@ -12,7 +12,8 @@ def notification_reservation_evenements(sender, instance, created, **kwargs):
 
     if created:
         titre = "Nouvelle réservation !"
-        message = f"{passager.first_name or 'Un passager'} a réservé {instance.nombre_places} place(s) pour votre trajet {instance.trajet.lieu_depart} ➔ {instance.trajet.destination}."
+        places = getattr(instance, 'nombre_de_places', getattr(instance, 'nombre_places', 1))
+        message = f"{passager.first_name or 'Un passager'} a réservé {places} place(s) pour votre trajet {instance.trajet.lieu_depart} ➔ {instance.trajet.destination}."
         envoyer_push_notification(
             conducteur,
             titre,

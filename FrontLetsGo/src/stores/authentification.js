@@ -1,49 +1,208 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+import { serviceAuth } from '@/services/api'
+import { getAvatarUrl } from '@/utils/avatar'
 
 export const useAuthentificationStore = defineStore('authentification', () => {
-  // Par défaut, l'utilisateur n'est pas connecté lors de sa première visite
-  const estConnecte = ref(false)
+  const estConnecte = ref(!!localStorage.getItem('letsgo_access_token'))
   const profilComplet = ref(false)
+  const chargement = ref(false)
+  const erreur = ref(null)
 
+  // Utilisateur par défaut
   const utilisateur = ref({
-    id: 1,
-    prenom: 'Thomas',
-    nom: 'Meyer',
-    nomComplet: 'Thomas Meyer',
-    email: 'thomas.meyer@letsgo.sn',
-    telephone: '+221 77 450 12 34',
-    photoUrl: '/images/avatar_thomas.jpg',
-    role: 'conducteur',
-    note: 4.9,
-    estConducteurVerifie: true,
+    id: null,
+    prenom: '',
+    nom: '',
+    nomComplet: '',
+    email: '',
+    telephone: '',
+    photoUrl: null,
+    role: 'passager', // 'passager' ou 'conducteur'
+    note: 5.0,
+    estConducteurVerifie: false,
   })
 
-  // Permet de mémoriser où l'utilisateur voulait aller avant d'être invité à se connecter
+  // Mémorise la route demandée avant redirection vers la connexion
   const intentionRedirection = ref('')
 
   const nomAffiche = computed(() => {
-    return utilisateur.value?.prenom || 'Conducteur'
+    return utilisateur.value?.prenom || utilisateur.value?.nomComplet || 'Utilisateur'
   })
 
-  function connecter(identifiant = '', options = {}) {
-    estConnecte.value = true
-    if (identifiant) {
-      utilisateur.value.email = identifiant
+  const avatarActif = computed(() => {
+    const prenom = (utilisateur.value?.prenom || '').trim()
+    const nom = (utilisateur.value?.nom || '').trim()
+    if (prenom && nom) {
+      return getAvatarUrl(utilisateur.value?.photoUrl, prenom, nom)
     }
-    if (options.role) {
-      utilisateur.value.role = options.role
+    const nomComplet = (utilisateur.value?.nomComplet || prenom || nom || 'Utilisateur').trim()
+    return getAvatarUrl(utilisateur.value?.photoUrl, nomComplet)
+  })
+
+  const estConducteur = computed(() => {
+    return utilisateur.value?.role === 'conducteur'
+  })
+
+  // Synchronise le profil depuis l'API
+  function mapperUtilisateur(donnees) {
+    if (!donnees) return
+    const prenom = (donnees.first_name || donnees.prenom || '').trim()
+    const nom = (donnees.last_name || donnees.nom || '').trim()
+    const nomComplet = `${prenom} ${nom}`.trim() || donnees.email || 'Utilisateur'
+    utilisateur.value = {
+      id: donnees.id,
+      prenom,
+      nom,
+      nomComplet,
+      email: donnees.email || '',
+      telephone: donnees.telephone || '',
+      photoUrl: donnees.photo || null,
+      role: donnees.role || 'passager',
+      note: donnees.note || 4.8,
+      estConducteurVerifie: donnees.is_verified || false,
+    }
+    profilComplet.value = !!donnees.is_profile_complete
+    estConnecte.value = true
+    localStorage.setItem('letsgo_utilisateur', JSON.stringify(utilisateur.value))
+  }
+
+
+  // Initialisation au démarrage de l'app
+  async function initialiserSession() {
+    const token = localStorage.getItem('letsgo_access_token')
+    if (!token) {
+      estConnecte.value = false
+      return
+    }
+
+    // Restaurer le cache local d'abord pour un affichage instantané
+    const cache = localStorage.getItem('letsgo_utilisateur')
+    if (cache) {
+      try {
+        const u = JSON.parse(cache)
+        if (u) {
+          const prenom = (u.prenom || u.first_name || '').trim()
+          const nom = (u.nom || u.last_name || '').trim()
+          u.prenom = prenom
+          u.nom = nom
+          if (!u.nomComplet || u.nomComplet === prenom) {
+            u.nomComplet = `${prenom} ${nom}`.trim() || u.email || 'Utilisateur'
+          }
+          utilisateur.value = u
+          estConnecte.value = true
+        }
+      } catch (e) {
+        console.error('Erreur parsing cache utilisateur:', e)
+      }
+    }
+
+    try {
+      const profil = await serviceAuth.getProfil()
+      mapperUtilisateur(profil)
+    } catch (e) {
+      console.warn('Session expirée ou profil inaccessible:', e)
+      // Si le token est invalide, déconnecter
+      if (e.response?.status === 401) {
+        deconnecter()
+      }
+    }
+  }
+
+  // Connexion réelle via JWT (support Email et Téléphone sénégalais)
+  async function connecter(identifiant, motDePasse) {
+    chargement.value = true
+    erreur.value = null
+    try {
+      const data = await serviceAuth.connexion({
+        identifiant: identifiant,
+        email: identifiant,
+        username: identifiant,
+        telephone: identifiant,
+        password: motDePasse,
+      })
+
+      localStorage.setItem('letsgo_access_token', data.access)
+      if (data.refresh) {
+        localStorage.setItem('letsgo_refresh_token', data.refresh)
+      }
+
+      estConnecte.value = true
+
+      // Charger le profil réel
+      const profil = await serviceAuth.getProfil()
+      mapperUtilisateur(profil)
+      return { succes: true }
+    } catch (err) {
+      console.error('Erreur de connexion:', err)
+      const detail = err.response?.data?.detail
+      const message = Array.isArray(detail)
+        ? detail[0]
+        : (detail || 'Identifiants incorrects. Veuillez vérifier votre adresse e-mail ou numéro de téléphone et mot de passe.')
+      erreur.value = message
+      return { succes: false, erreur: message }
+    } finally {
+      chargement.value = false
+    }
+  }
+
+  // Inscription réelle
+  async function inscrire(donnees) {
+    chargement.value = true
+    erreur.value = null
+    try {
+      const reponse = await serviceAuth.inscription(donnees)
+      return { succes: true, data: reponse }
+    } catch (err) {
+      console.error("Erreur d'inscription:", err)
+      let message = "Impossible de créer le compte. Veuillez vérifier les informations saisies."
+
+      const emailErr = err.response?.data?.email?.[0]
+      const phoneErr = err.response?.data?.telephone?.[0]
+      const detailErr = err.response?.data?.detail
+
+      if (emailErr && emailErr.toLowerCase().includes('already exists')) {
+        message = "Un compte existe déjà avec cette adresse e-mail. Vous pouvez vous connecter directement."
+      } else if (phoneErr && phoneErr.toLowerCase().includes('already exists')) {
+        message = "Ce numéro de téléphone est déjà associé à un compte existant."
+      } else if (emailErr) {
+        message = emailErr
+      } else if (phoneErr) {
+        message = phoneErr
+      } else if (detailErr) {
+        message = Array.isArray(detailErr) ? detailErr[0] : detailErr
+      }
+
+      erreur.value = message
+      return { succes: false, erreur: message }
+    } finally {
+      chargement.value = false
+    }
+  }
+
+  // Déconnexion
+  async function deconnecter() {
+    const refresh = localStorage.getItem('letsgo_refresh_token')
+    await serviceAuth.deconnexion(refresh)
+    estConnecte.value = false
+    profilComplet.value = false
+    intentionRedirection.value = ''
+    utilisateur.value = {
+      id: null,
+      prenom: '',
+      nom: '',
+      nomComplet: '',
+      email: '',
+      telephone: '',
+      photoUrl: null,
+      role: 'passager',
+      note: 5.0,
+      estConducteurVerifie: false,
     }
   }
 
   function marquerProfilComplet() {
     profilComplet.value = true
-  }
-
-  function deconnecter() {
-    estConnecte.value = false
-    profilComplet.value = false
-    intentionRedirection.value = ''
   }
 
   function definirIntentionRedirection(routeCible) {
@@ -59,12 +218,18 @@ export const useAuthentificationStore = defineStore('authentification', () => {
   return {
     estConnecte,
     profilComplet,
+    chargement,
+    erreur,
     utilisateur,
     nomAffiche,
+    avatarActif,
+    estConducteur,
     intentionRedirection,
+    initialiserSession,
     connecter,
-    marquerProfilComplet,
+    inscrire,
     deconnecter,
+    marquerProfilComplet,
     definirIntentionRedirection,
     consommerIntentionRedirection,
   }

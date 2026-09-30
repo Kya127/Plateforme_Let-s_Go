@@ -1,5 +1,8 @@
 <script setup>
-defineProps({
+import { computed } from 'vue'
+import { getAvatarUrl } from '@/utils/avatar'
+
+const props = defineProps({
   departVille: {
     type: String,
     default: 'DAKAR',
@@ -30,7 +33,7 @@ defineProps({
   },
   conducteurNom: {
     type: String,
-    default: 'Thomas Meyer',
+    default: 'Conducteur',
   },
   conducteurNote: {
     type: [Number, String],
@@ -38,19 +41,31 @@ defineProps({
   },
   conducteurPhoto: {
     type: String,
-    default: '/images/avatar_thomas.jpg',
+    default: '',
   },
   statut: {
     type: String,
     default: 'DISPONIBLE',
   },
+  estReserve: {
+    type: Boolean,
+    default: false,
+  },
 })
+
+const photoAffichee = computed(() => getAvatarUrl(props.conducteurPhoto, props.conducteurNom))
 
 defineEmits(['reserver'])
 </script>
 
 <template>
-  <div class="carte-trajet">
+  <div
+    class="carte-trajet"
+    role="button"
+    tabindex="0"
+    @click="$emit('reserver')"
+    @keydown.enter="$emit('reserver')"
+  >
     <div class="trajet-corps">
       <!-- Trajet Points (Gauche) -->
       <div class="trajet-etapes">
@@ -90,7 +105,7 @@ defineEmits(['reserver'])
     <div class="trajet-pied">
       <div class="conducteur-info">
         <img
-          :src="conducteurPhoto"
+          :src="photoAffichee"
           :alt="conducteurNom"
           class="conducteur-avatar"
         />
@@ -105,9 +120,19 @@ defineEmits(['reserver'])
       <button
         type="button"
         class="bouton-reserver"
-        @click="$emit('reserver')"
+        :class="{ 'bouton-reserver--reserve': estReserve }"
+        :title="estReserve ? 'Trajet déjà réservé' : 'Réserver ce trajet'"
+        @click.stop="$emit('reserver')"
       >
-        RÉSERVER
+        <span v-if="estReserve" class="btn-reserve-content">
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="20 6 9 17 4 12"></polyline>
+          </svg>
+          RÉSERVÉ
+        </span>
+        <span v-else>
+          RÉSERVER
+        </span>
       </button>
     </div>
   </div>
@@ -118,7 +143,7 @@ defineEmits(['reserver'])
   background: var(--color-white);
   border-radius: var(--radius-xl);
   padding: 20px;
-  box-shadow: 0 10px 25px -5px rgba(17, 24, 39, 0.05), 0 4px 10px -3px rgba(17, 24, 39, 0.03);
+  box-shadow: 0 10px 25px -5px rgba(17, 24, 39, 0.035), 0 4px 10px -3px rgba(17, 24, 39, 0.021);
   border: 1px solid rgba(229, 231, 235, 0.8);
   display: flex;
   flex-direction: column;
@@ -127,7 +152,7 @@ defineEmits(['reserver'])
 
 .carte-trajet:hover {
   transform: translateY(-2px);
-  box-shadow: 0 14px 28px -6px rgba(17, 24, 39, 0.09);
+  box-shadow: 0 14px 28px -6px rgba(17, 24, 39, 0.05);
 }
 
 .trajet-corps {
@@ -286,5 +311,24 @@ defineEmits(['reserver'])
 .bouton-reserver:hover {
   background-color: #1e2538;
   transform: scale(0.98);
+}
+
+.bouton-reserver--reserve {
+  background-color: #ECFDF5 !important;
+  color: #059669 !important;
+  border: 1px solid #A7F3D0 !important;
+  box-shadow: none !important;
+}
+
+.bouton-reserver--reserve:hover {
+  background-color: #D1FAE5 !important;
+  border-color: #6EE7B7 !important;
+  transform: none;
+}
+
+.btn-reserve-content {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
 }
 </style>

@@ -3,6 +3,8 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 
+from datetime import date
+from django.utils import timezone
 from .models import Trajet
 from .serializers import TrajetSerializer, TrajetDetailSerializer
 from .filters import TrajetFilter
@@ -31,13 +33,27 @@ class TrajetViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         queryset = Trajet.objects.all()
-        # En liste publique, on affiche uniquement les trajets planifiés ayant au moins 1 place libre
+        # En liste filtrée pour le conducteur connecté
         if self.action == 'list':
+            if self.request.query_params.get('conducteur') == 'me' or self.request.query_params.get('mes_trajets') == 'true':
+                if self.request.user.is_authenticated:
+                    return Trajet.objects.filter(conducteur=self.request.user).order_by('-date', '-heure_depart')
+                return Trajet.objects.none()
+
+            # En liste publique, on affiche uniquement les trajets planifiés à venir ayant au moins 1 place libre
+            today = max(timezone.localdate(), date.today())
             queryset = queryset.filter(
                 statut=Trajet.StatutTrajet.PLANIFIE,
-                places_disponibles__gt=0
+                places_disponibles__gt=0,
+                date__gte=today
             )
         return queryset
+
+    @action(detail=False, methods=['get'], permission_classes=[permissions.IsAuthenticated])
+    def mes_trajets(self, request):
+        trajets = Trajet.objects.filter(conducteur=request.user).order_by('-date', '-heure_depart')
+        serializer = TrajetDetailSerializer(trajets, many=True, context={'request': request})
+        return Response(serializer.data)
 
     def perform_create(self, serializer):
         serializer.save(conducteur=self.request.user)
@@ -53,7 +69,7 @@ class TrajetViewSet(viewsets.ModelViewSet):
         
         serializer.save()
 
-    @action(detail=True, methods=['patch'], permission_classes=[permissions.IsAuthenticated])
+    @action(detail=True, methods=['patch', 'post'], permission_classes=[permissions.IsAuthenticated])
     def demarrer(self, request, pk=None):
         trajet = self.get_object()
 
@@ -70,7 +86,7 @@ class TrajetViewSet(viewsets.ModelViewSet):
         trajet.save()
         return Response({"message": "Trajet démarré avec succès.", "statut": trajet.statut})
 
-    @action(detail=True, methods=['patch'], permission_classes=[permissions.IsAuthenticated])
+    @action(detail=True, methods=['patch', 'post'], permission_classes=[permissions.IsAuthenticated])
     def terminer(self, request, pk=None):
         trajet = self.get_object()
 
@@ -89,7 +105,7 @@ class TrajetViewSet(viewsets.ModelViewSet):
 
 
 
-    @action(detail=True, methods=['patch'], permission_classes=[permissions.IsAuthenticated])
+    @action(detail=True, methods=['patch', 'post'], permission_classes=[permissions.IsAuthenticated])
     def annuler(self, request, pk=None):
         trajet = self.get_object()
 

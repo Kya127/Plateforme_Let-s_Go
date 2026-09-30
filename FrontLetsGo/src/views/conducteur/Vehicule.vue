@@ -22,8 +22,10 @@
 
     <!-- ================= PROGRESS ================= -->
     <div class="progress-wrapper">
-      <div class="progress-track">
-        <div class="progress-value"></div>
+      <div class="progress-grid">
+        <span class="progress-segment is-active"></span>
+        <span class="progress-segment is-active"></span>
+        <span class="progress-segment"></span>
       </div>
     </div>
 
@@ -574,27 +576,25 @@ onBeforeUnmount(() => {
    ========================================================= */
 
 .progress-wrapper {
-  padding: 0 21px;
+  padding: 4px 21px 0;
 }
 
-.progress-track {
+.progress-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
   width: 100%;
-  height: 5px;
-
-  overflow: hidden;
-
-  background: #e5e7eb;
-
-  border-radius: 999px;
 }
 
-.progress-value {
-  width: 50%;
-  height: 100%;
-
-  background: var(--brand);
-
+.progress-segment {
+  height: 5px;
   border-radius: 999px;
+  background: #e5e7eb;
+  transition: background-color 0.25s ease;
+}
+
+.progress-segment.is-active {
+  background: var(--brand);
 }
 
 /* =========================================================
@@ -846,7 +846,7 @@ form {
   background: #ffffff;
 
   box-shadow:
-    0 4px 12px rgba(17, 22, 39, 0.12);
+    0 4px 12px rgba(17, 22, 39, 0.07);
 }
 
 .search-icon svg {
@@ -932,7 +932,7 @@ form {
   background: white;
 
   box-shadow:
-    0 2px 5px rgba(17, 22, 39, 0.08);
+    0 2px 5px rgba(17, 22, 39, 0.04);
 }
 
 .search-icon svg {
@@ -1059,7 +1059,7 @@ form {
   background: white;
 
   box-shadow:
-    0 8px 24px rgba(17, 22, 39, 0.12);
+    0 8px 24px rgba(17, 22, 39, 0.07);
 }
 
 .color-options button {
@@ -1224,7 +1224,7 @@ form {
   cursor: pointer;
 
   box-shadow:
-    0 5px 12px rgba(255, 77, 45, 0.16);
+    0 5px 12px rgba(255, 77, 45, 0.07);
 
   transition: 0.2s ease;
 }

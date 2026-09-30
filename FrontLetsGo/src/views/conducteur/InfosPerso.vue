@@ -20,8 +20,10 @@
 
     <!-- Progress -->
     <div class="progress-wrapper">
-      <div class="progress-track">
-        <div class="progress-value"></div>
+      <div class="progress-grid">
+        <span class="progress-segment is-active"></span>
+        <span class="progress-segment"></span>
+        <span class="progress-segment"></span>
       </div>
     </div>
 
@@ -201,9 +203,12 @@
 <script setup>
 import { computed, ref, onBeforeUnmount, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { useAuthentificationStore } from '@/stores/authentification'
+import { serviceAuth } from '@/services/api'
 
 const STORAGE_KEY = 'letsgo_onboarding_infos_perso'
 const router = useRouter()
+const storeAuth = useAuthentificationStore()
 
 const emit = defineEmits(['back', 'continue'])
 
@@ -240,6 +245,21 @@ const hydrateState = () => {
     if (saved.photoDataUrl) {
       photoPreview.value = saved.photoDataUrl
       photoFile.value = { name: 'photo_profil', type: 'image/jpeg' }
+    }
+
+    // Pré-remplissage intelligent depuis le profil réel
+    if (!form.value.firstName && storeAuth.utilisateur?.prenom) {
+      form.value.firstName = storeAuth.utilisateur.prenom
+    }
+    if (!form.value.lastName && storeAuth.utilisateur?.nom) {
+      form.value.lastName = storeAuth.utilisateur.nom
+    }
+    if (!form.value.phone && storeAuth.utilisateur?.telephone) {
+      form.value.phone = storeAuth.utilisateur.telephone.replace(/\+221/, '').replace(/\s+/g, '')
+      formatPhone()
+    }
+    if (!photoPreview.value && storeAuth.utilisateur?.photoUrl) {
+      photoPreview.value = storeAuth.utilisateur.photoUrl
     }
   } catch (error) {
     console.warn('Erreur lecture état infos perso:', error)
@@ -349,10 +369,25 @@ const formatBirthDate = () => {
   form.value.birthDate = formatted.join(' / ')
 }
 
-const handleSubmit = () => {
+const handleSubmit = async () => {
   if (!canContinue.value) return
 
   persistState()
+
+  try {
+    const formData = new FormData()
+    if (form.value.firstName) formData.append('first_name', form.value.firstName.trim())
+    if (form.value.lastName) formData.append('last_name', form.value.lastName.trim())
+    const fullPhone = '+221' + form.value.phone.replace(/\s/g, '')
+    formData.append('telephone', fullPhone)
+    if (photoFile.value && photoFile.value instanceof File) {
+      formData.append('photo', photoFile.value)
+    }
+    await serviceAuth.mettreAJourProfil(formData)
+    await storeAuth.initialiserSession()
+  } catch (err) {
+    console.warn('Mise à jour profil en arrière-plan:', err)
+  }
 
   emit('continue', {
     ...form.value,
@@ -509,25 +544,22 @@ onBeforeUnmount(() => {
   padding: 4px 21px 0;
 }
 
-.progress-track {
-  position: relative;
-
+.progress-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
   width: 100%;
-  height: 5px;
-
-  overflow: hidden;
-
-  background: #e4e7eb;
-  border-radius: var(--radius-full);
 }
 
-.progress-value {
-  width: 25%;
-
-  height: 100%;
-
-  background: var(--brand);
+.progress-segment {
+  height: 5px;
   border-radius: var(--radius-full);
+  background: #e5e7eb;
+  transition: background-color 0.25s ease;
+}
+
+.progress-segment.is-active {
+  background: var(--brand);
 }
 
 /* =========================================================
@@ -689,8 +721,8 @@ form {
   background: #f4f5f6;
 
   box-shadow:
-    0 2px 5px rgba(17, 22, 39, 0.08),
-    0 1px 2px rgba(17, 22, 39, 0.05);
+    0 2px 5px rgba(17, 22, 39, 0.04),
+    0 1px 2px rgba(17, 22, 39, 0.035);
 }
 
 .photo-preview svg {
@@ -823,8 +855,7 @@ form {
 
   cursor: pointer;
 
-  box-shadow:
-    0 5px 12px rgba(255, 77, 45, 0.16);
+  box-shadow: none;
 
   transition:
     background 0.2s ease,
