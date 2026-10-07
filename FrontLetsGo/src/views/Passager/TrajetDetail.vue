@@ -187,7 +187,7 @@
           </div>
 
           <!-- Colonne Latérale : Carte Sticky de Réservation & Garanties (Composant Modulaire) -->
-          <!-- <BarreActionReservation
+          <BarreActionReservation
             :total-price="trip.totalPrice"
             :available-seats="trip.availableSeats"
             :est-mon-trajet="estMonTrajet"
@@ -197,7 +197,7 @@
             @reserver="reserveTrip"
             @gerer-espace-conducteur="router.push({ name: 'vue-trajet-prevu', params: { id: trip.id } })"
             @voir-reservation="voirMaReservation"
-          /> -->
+          />
 
         </div>
       </main>
@@ -382,7 +382,11 @@ const handleDriverImageError = (e) => {
 
 const goBack = () => {
   // Navigation de retour propre vers l'accueil (ou recherche) sans jamais boucler vers le profil conducteur
-  if (route.query.from === 'recherche') {
+  if (route.query.from === 'reservation') {
+    const query = { ...route.query }
+    delete query.from
+    router.push({ name: 'reservation-confirmee', query })
+  } else if (route.query.from === 'recherche') {
     router.push({ name: 'recherche-resultats' })
   } else {
     router.push('/accueil')

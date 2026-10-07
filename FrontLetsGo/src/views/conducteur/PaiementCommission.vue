@@ -120,7 +120,7 @@
           <section class="content-card section-payment-method">
             <div class="method-header-row">
               <h2 class="section-title">MODE DE PAIEMENT</h2>
-              <span class="method-caption">Choisissez votre compte :</span>
+              <!-- <span class="method-caption">Choisissez votre compte :</span> -->
             </div>
 
             <div class="method-cards-list">
@@ -148,7 +148,7 @@
                   <div class="provider-meta">
                     <div class="provider-title-row">
                       <strong class="provider-name">Wave</strong>
-                      <span class="tag-badge tag-badge--wave">Instantané</span>
+                      <!-- <span class="tag-badge tag-badge--wave">Instantané</span> -->
                     </div>
                     <span class="provider-desc">Débit direct sans frais</span>
                   </div>
@@ -189,7 +189,7 @@
                   <div class="provider-meta">
                     <div class="provider-title-row">
                       <strong class="provider-name">Orange Money</strong>
-                      <span class="tag-badge tag-badge--om">OTP / USSD</span>
+                      <!-- <span class="tag-badge tag-badge--om">OTP / USSD</span> -->
                     </div>
                     <span class="provider-desc">Paiement sécurisé mobile</span>
                   </div>
@@ -239,7 +239,7 @@
             </button>
 
             <p class="security-caption">
-              Paiement 100% sécurisé via PayTech • Redirection instantanée
+              Paiement 100% sécurisé via PayTech 
             </p>
           </div>
 

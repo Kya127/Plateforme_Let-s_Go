@@ -8,10 +8,10 @@
       <div class="header-inner">
         <div class="header-spacer"></div>
 
-        <div class="header-step">
+        <!-- <div class="header-step">
           <span class="header-dot"></span>
           <span>Votre avis</span>
-        </div>
+        </div> -->
 
         <div class="header-spacer"></div>
       </div>
@@ -28,18 +28,16 @@
       ==================================================== -->
       <section class="review-intro">
 
-        <span class="eyebrow">
+        <!-- <span class="eyebrow">
           ÉVALUATION DU TRAJET
-        </span>
+        </span> -->
 
         <h1>
-          Comment était
-          votre trajet ?
+          Comment était votre trajet ?
         </h1>
 
         <p>
-          Votre avis aide la communauté Let's Go
-          à voyager dans de meilleures conditions.
+          Votre avis aide la communauté Let's Go à voyager dans de <span class="sct-paiement">meilleures conditions.</span>
         </p>
 
       </section>
@@ -72,10 +70,10 @@
 
           </div>
 
-          <span
+          <!-- <span
             class="driver-status"
             aria-label="Conducteur actif"
-          ></span>
+          ></span> -->
         </div>
 
         <h2>
@@ -196,9 +194,9 @@
             </h2>
           </div>
 
-          <span class="optional-label">
+          <!-- <span class="optional-label">
             Facultatif
-          </span>
+          </span> -->
         </div>
 
         <div class="compliment-grid">
@@ -328,9 +326,9 @@
             </h2>
           </div>
 
-          <span class="optional-label">
+          <!-- <span class="optional-label">
             Facultatif
-          </span>
+          </span> -->
         </div>
 
         <div class="textarea-wrapper">
@@ -1872,7 +1870,7 @@ onBeforeUnmount(() => {
   .review-intro h1 {
     margin-top: 12px;
 
-    font-size: 31px;
+    font-size: 30px;
 
     line-height: 1.12;
 
@@ -1887,6 +1885,10 @@ onBeforeUnmount(() => {
 
     line-height: 1.55;
   }
+ .sct-paiement{
+  position: relative;
+  left: 110px;
+}
 
 
   /* DRIVER */

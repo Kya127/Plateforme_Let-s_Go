@@ -124,6 +124,15 @@
               Annuler ma réservation
             </button>
 
+            <button
+              v-if="statutReservation === 'CONFIRMEE' && trajetId"
+              type="button"
+              class="bouton-action bouton-clair"
+              @click="voirTrajet"
+            >
+              Voir les détails du trajet
+            </button>
+
             <!-- 3. Retour Accueil ou Rechercher -->
             <button
               type="button"
@@ -200,6 +209,23 @@ const evaluerConducteur = () => {
   router.push({
     name: 'evaluer-trajet',
     params: { id: tId }
+  })
+}
+
+const voirTrajet = () => {
+  router.push({
+    name: 'vue-trajet-detail',
+    params: { id: trajetId.value },
+    query: {
+      from: 'reservation',
+      ref: reservation.value.reference,
+      depart: reservation.value.depart,
+      arrivee: reservation.value.arrivee,
+      heure: reservation.value.heure,
+      places: reservation.value.places,
+      reservationId: reservationId.value,
+      trajetId: trajetId.value
+    }
   })
 }
 
