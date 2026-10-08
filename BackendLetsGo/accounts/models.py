@@ -47,3 +47,34 @@ class VerificationDocument(models.Model):
 
     def __str__(self):
         return f"Demande de {self.user.email} - Status: {self.status}"
+
+
+class CodeVerification(models.Model):
+    class Canal(models.TextChoices):
+        EMAIL = 'EMAIL', 'Email'
+        SMS = 'SMS', 'SMS'
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='codes_verification')
+    code = models.CharField(max_length=6, verbose_name="Code OTP à 6 chiffres")
+    canal = models.CharField(max_length=10, choices=Canal.choices, default=Canal.EMAIL)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField(verbose_name="Date d'expiration")
+    est_utilise = models.BooleanField(default=False, verbose_name="Déjà utilisé")
+    tentatives = models.PositiveSmallIntegerField(default=0, verbose_name="Nombre de tentatives erronées")
+
+    class Meta:
+        verbose_name = "Code de vérification"
+        verbose_name_plural = "Codes de vérification"
+        ordering = ['-created_at']
+
+    @property
+    def est_expire(self):
+        from django.utils import timezone
+        return timezone.now() >= self.expires_at
+
+    @property
+    def est_valide(self):
+        return (not self.est_utilise) and (not self.est_expire) and (self.tentatives < 5)
+
+    def __str__(self):
+        return f"Code {self.code} pour {self.user.email} (valide: {self.est_valide})"

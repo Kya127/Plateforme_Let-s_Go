@@ -51,7 +51,11 @@ class CustomTokenObtainPairSerializer(serializers.Serializer):
 
         if user and user.check_password(password):
             if not user.is_active:
-                raise serializers.ValidationError({"detail": "Ce compte est désactivé."})
+                raise serializers.ValidationError({
+                    "detail": "Votre compte n'est pas encore vérifié. Veuillez saisir votre code de confirmation.",
+                    "non_verifie": True,
+                    "email": user.email
+                })
             
             refresh = RefreshToken.for_user(user)
             return {
@@ -80,7 +84,6 @@ class RegisterSerializer(serializers.ModelSerializer):
         fields = ('id', 'first_name', 'last_name', 'email', 'telephone', 'password', 'role')
         read_only_fields = ('role',)
 
-
     def create(self, validated_data):
         # Utilisation de create_user pour hacher automatiquement le mot de passe
         user = User.objects.create_user(
@@ -90,7 +93,8 @@ class RegisterSerializer(serializers.ModelSerializer):
             last_name=validated_data.get('last_name', ''),
             telephone=validated_data['telephone'],
             password=validated_data['password'],
-            role=User.Role.PASSAGER
+            role=User.Role.PASSAGER,
+            is_active=False # Compte inactif en attente de vérification du code OTP
         )
         return user
 

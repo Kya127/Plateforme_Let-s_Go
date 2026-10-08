@@ -145,6 +145,18 @@ export const serviceAuth = {
     return response.data
   },
 
+  // Vérification de code OTP d'activation de compte
+  async verifierCode(donnees) {
+    const response = await apiBackend.post('auth/verifier-code/', donnees)
+    return response.data
+  },
+
+  // Renvoyer le code de vérification
+  async renvoyerCode(donnees) {
+    const response = await apiBackend.post('auth/renvoyer-code/', donnees)
+    return response.data
+  },
+
   // Profil complet de l'utilisateur connecté
   async getProfil() {
     const response = await apiBackend.get('auth/profile/')

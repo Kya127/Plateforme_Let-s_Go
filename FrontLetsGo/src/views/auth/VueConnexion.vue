@@ -20,11 +20,11 @@
            EN-TÊTE MOBILE : CHEVRON À GAUCHE & LOGO AU MILIEU
       ====================================================== -->
       <header class="entete-mobile">
-        <!-- Bouton retour chevron (redirige vers la page d'inscription) -->
+        <!-- Bouton retour chevron (redirige vers l'accueil visiteur) -->
         <button
           type="button"
           class="bouton-retour"
-          aria-label="Retourner vers la page d'inscription"
+          aria-label="Retourner à l'accueil"
           @click="retourArriere"
         >
           <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -49,13 +49,13 @@
         <button
           type="button"
           class="bouton-retour-desktop"
-          aria-label="Retourner vers la page d'inscription"
+          aria-label="Retourner à l'accueil"
           @click="retourArriere"
         >
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="15 18 9 12 15 6"></polyline>
           </svg>
-          <span>Créer un compte</span>
+          <span>Retour à l'accueil</span>
         </button>
       </div>
 
@@ -86,7 +86,16 @@
             <line x1="12" y1="8" x2="12" y2="12"></line>
             <line x1="12" y1="16" x2="12.01" y2="16"></line>
           </svg>
-          <span>{{ messageErreur }}</span>
+          <div class="conteneur-texte-erreur">
+            <span>{{ messageErreur }}</span>
+            <router-link
+              v-if="compteNonVerifieEmail"
+              :to="{ path: '/verification-compte', query: { email: compteNonVerifieEmail } }"
+              class="lien-activer-compte"
+            >
+              Activer mon compte avec le code de confirmation &rarr;
+            </router-link>
+          </div>
         </div>
 
         <!-- Formulaire de connexion -->
@@ -106,11 +115,12 @@
               </span>
               <input
                 id="identifiant"
+                name="username"
                 v-model.trim="formulaire.identifiant"
                 type="text"
                 class="input-saisie"
                 placeholder="Ex: fatou@exemple.sn ou 77 123 45 67"
-                autocomplete="username"
+                autocomplete="username email"
                 required
                 @blur="validerIdentifiant"
               />
@@ -139,6 +149,7 @@
 
               <input
                 id="motDePasse"
+                name="password"
                 v-model="formulaire.motDePasse"
                 :type="motDePasseVisible ? 'text' : 'password'"
                 class="input-saisie"
@@ -243,6 +254,7 @@ const motDePasseVisible = ref(false)
 const estEnChargement = ref(false)
 const messageErreur = ref('')
 const messageSucces = ref('')
+const compteNonVerifieEmail = ref('')
 
 const formulaire = reactive({
   identifiant: '',
@@ -258,22 +270,32 @@ const erreurs = reactive({
    SYNCHRONISATION AUTOMATIQUE AVEC L'URL (EX: APRÈS INSCRIPTION)
    ========================================================================== */
 function synchroniserAvecUrl() {
-  // Pré-remplir l'e-mail s'il provient de la redirection d'inscription
+  // Pré-remplir l'e-mail s'il provient de la redirection d'inscription ou d'activation
   if (route.query.email) {
     formulaire.identifiant = String(route.query.email).trim()
   }
 
-  // Le mot de passe ne doit JAMAIS être pré-rempli
-  formulaire.motDePasse = ''
-
-  // Affichage du bandeau de confirmation d'inscription
-  if (route.query.inscrit === '1') {
+  // Affichage du bandeau de confirmation d'inscription ou d'activation
+  if (route.query.active === '1') {
+    messageSucces.value = 'Votre compte a été vérifié avec succès ! Connectez-vous avec vos identifiants pour continuer.'
+  } else if (route.query.inscrit === '1') {
     messageSucces.value = 'Votre compte a été créé avec succès ! Connectez-vous avec votre mot de passe pour commencer.'
   }
 }
 
 onMounted(() => {
   synchroniserAvecUrl()
+  // Détection de l'autofill Google/navigateur sur les champs
+  setTimeout(() => {
+    const inputPass = document.getElementById('motDePasse')
+    if (inputPass && inputPass.value && !formulaire.motDePasse) {
+      formulaire.motDePasse = inputPass.value
+    }
+    const inputIdent = document.getElementById('identifiant')
+    if (inputIdent && inputIdent.value && !formulaire.identifiant) {
+      formulaire.identifiant = inputIdent.value.trim()
+    }
+  }, 350)
 })
 
 watch(
@@ -302,6 +324,16 @@ function validerMotDePasse() {
 }
 
 function validerFormulaire() {
+  // Capture de l'autofill Google s'il a été injecté
+  const inputPass = document.getElementById('motDePasse')
+  if (inputPass && inputPass.value && !formulaire.motDePasse) {
+    formulaire.motDePasse = inputPass.value
+  }
+  const inputIdent = document.getElementById('identifiant')
+  if (inputIdent && inputIdent.value && !formulaire.identifiant) {
+    formulaire.identifiant = inputIdent.value.trim()
+  }
+
   validerIdentifiant()
   validerMotDePasse()
   return !erreurs.identifiant && !erreurs.motDePasse
@@ -312,6 +344,7 @@ function validerFormulaire() {
    ========================================================================== */
 async function gererConnexion() {
   messageErreur.value = ''
+  compteNonVerifieEmail.value = ''
 
   if (!validerFormulaire()) {
     return
@@ -333,6 +366,9 @@ async function gererConnexion() {
 
       routeur.push(redirectionCible)
     } else {
+      if (resultat.nonVerifie) {
+        compteNonVerifieEmail.value = resultat.email || formulaire.identifiant.trim()
+      }
       messageErreur.value =
         resultat.erreur ||
         'Identifiant ou mot de passe incorrect. Veuillez vérifier vos accès.'
@@ -360,10 +396,10 @@ function gererConnexionGoogle() {
 }
 
 /* ==========================================================================
-   NAVIGATION : RETOUR VERS LA PAGE D'INSCRIPTION
+   NAVIGATION : RETOUR VERS LA PAGE D'ACCUEIL (NON CONNECTÉ)
    ========================================================================== */
 function retourArriere() {
-  routeur.push('/inscription')
+  routeur.push('/accueil')
 }
 
 function motDePasseOublie() {
@@ -606,6 +642,26 @@ function motDePasseOublie() {
 .alerte-erreur svg {
   flex-shrink: 0;
   color: #ef4444;
+}
+
+.conteneur-texte-erreur {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.lien-activer-compte {
+  color: #ff4d2d;
+  font-weight: 700;
+  font-size: 13px;
+  text-decoration: underline;
+  cursor: pointer;
+  width: fit-content;
+  transition: opacity 0.2s ease;
+}
+
+.lien-activer-compte:hover {
+  opacity: 0.85;
 }
 
 @keyframes apparaitreMessage {

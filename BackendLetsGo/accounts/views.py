@@ -15,7 +15,9 @@ class CustomTokenObtainPairView(TokenObtainPairView):
     """
     serializer_class = CustomTokenObtainPairSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
-from .models import User, VerificationDocument
+from .models import User, VerificationDocument, CodeVerification
+from .services import creer_et_envoyer_code_otp
+from django.utils import timezone
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.views import APIView
 
@@ -28,16 +30,160 @@ class RegisterView(generics.CreateAPIView):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
+
+        # Envoi automatique du code OTP par email
+        creer_et_envoyer_code_otp(user, canal='EMAIL')
+
         return Response({
+            "succes": True,
+            "requires_verification": True,
             "user": {
                 "id": user.id,
                 "email": user.email,
                 "first_name": user.first_name,
                 "last_name": user.last_name,
+                "telephone": user.telephone,
                 "role": user.role
             },
-            "message": "Compte créé avec succès !"
+            "message": "Votre compte a été créé. Un code de confirmation à 6 chiffres a été envoyé à votre adresse e-mail."
         }, status=status.HTTP_201_CREATED)
+
+
+class VerifierCodeView(APIView):
+    """
+    Vérifie le code OTP à 6 chiffres soumis par l'utilisateur pour activer son compte.
+    """
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        email = (request.data.get('email') or '').strip()
+        code = (request.data.get('code') or '').strip()
+
+        if not email or not code:
+            return Response(
+                {"detail": "Veuillez fournir votre adresse e-mail et le code de vérification."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        user = User.objects.filter(email__iexact=email).first()
+        if not user:
+            return Response(
+                {"detail": "Aucun compte associé à cette adresse e-mail."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        if user.is_active:
+            return Response(
+                {
+                    "succes": True,
+                    "detail": "Ce compte est déjà activé. Vous pouvez vous connecter directement.",
+                    "deja_actif": True
+                },
+                status=status.HTTP_200_OK
+            )
+
+        # Récupérer le dernier code pour cet utilisateur
+        code_obj = CodeVerification.objects.filter(user=user, est_utilise=False).order_by('-created_at').first()
+
+        if not code_obj:
+            return Response(
+                {"detail": "Aucun code de confirmation actif. Veuillez demander un nouveau code."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if code_obj.est_expire:
+            return Response(
+                {"detail": "Ce code a expiré. Veuillez demander un nouveau code."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if code_obj.tentatives >= 5:
+            return Response(
+                {"detail": "Nombre maximum de tentatives dépassé. Veuillez demander un nouveau code."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if code_obj.code != code:
+            code_obj.tentatives += 1
+            code_obj.save(update_fields=['tentatives'])
+            restantes = max(0, 5 - code_obj.tentatives)
+            return Response(
+                {"detail": f"Code incorrect. Il vous reste {restantes} tentative(s)."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Code validé avec succès
+        code_obj.est_utilise = True
+        code_obj.save(update_fields=['est_utilise'])
+
+        user.is_active = True
+        user.save(update_fields=['is_active'])
+
+        # Générer tokens JWT pour connexion automatique
+        refresh = RefreshToken.for_user(user)
+
+        return Response({
+            "succes": True,
+            "message": "Votre compte a été vérifié et activé avec succès !",
+            "tokens": {
+                "refresh": str(refresh),
+                "access": str(refresh.access_token),
+            },
+            "user": {
+                "id": user.id,
+                "email": user.email,
+                "first_name": user.first_name,
+                "last_name": user.last_name,
+                "telephone": user.telephone,
+                "role": user.role
+            }
+        }, status=status.HTTP_200_OK)
+
+
+class RenvoyerCodeView(APIView):
+    """
+    Renvoyer un nouveau code OTP après vérification du délai anti-spam (60 secondes).
+    """
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        email = (request.data.get('email') or '').strip()
+        if not email:
+            return Response(
+                {"detail": "Veuillez renseigner votre adresse e-mail."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        user = User.objects.filter(email__iexact=email).first()
+        if not user:
+            return Response(
+                {"detail": "Aucun compte associé à cette adresse e-mail."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        if user.is_active:
+            return Response(
+                {"detail": "Ce compte est déjà activé. Vous pouvez vous connecter.", "deja_actif": True},
+                status=status.HTTP_200_OK
+            )
+
+        # Vérifier le délai anti-spam (60 secondes)
+        dernier_code = CodeVerification.objects.filter(user=user).order_by('-created_at').first()
+        if dernier_code:
+            ecoule = (timezone.now() - dernier_code.created_at).total_seconds()
+            if ecoule < 60:
+                attente = int(60 - ecoule)
+                return Response(
+                    {"detail": f"Veuillez patienter {attente} seconde(s) avant de demander un nouveau code."},
+                    status=status.HTTP_429_TOO_MANY_REQUESTS
+                )
+
+        creer_et_envoyer_code_otp(user, canal='EMAIL')
+
+        return Response({
+            "succes": True,
+            "message": "Un nouveau code de confirmation a été envoyé à votre adresse e-mail."
+        }, status=status.HTTP_200_OK)
 
 
 

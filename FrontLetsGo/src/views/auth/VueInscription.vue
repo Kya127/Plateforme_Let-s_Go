@@ -417,10 +417,10 @@ const gererInscription = async () => {
     })
 
     if (reponse.succes) {
-      // Redirection vers la page de connexion avec pré-remplissage de l'e-mail
+      // Redirection immédiate vers la page de vérification par code OTP
       router.push({
-        path: '/connexion',
-        query: { inscrit: '1', email: formulaire.email },
+        path: '/verification-compte',
+        query: { email: formulaire.email },
       })
     } else {
       erreurGlobale.value = reponse.erreur || "Une erreur est survenue lors de l'inscription."

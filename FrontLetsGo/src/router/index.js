@@ -23,6 +23,7 @@ import TrajetDetail from '@/views/Passager/TrajetDetail.vue'
 import ResumeReservation from '@/views/Passager/ResumeReservation.vue'
 import ReservationConfirmee from '@/views/Passager/ReservationConfirmee.vue'
 import ProfilConducteur from '@/views/Passager/ProfilConducteur.vue'
+import VueVerificationCompte from '../views/auth/VueVerificationCompte.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -55,6 +56,11 @@ const router = createRouter({
       path: '/connexion',
       name: 'connexion',
       component: VueConnexion,
+    },
+    {
+      path: '/verification-compte',
+      name: 'verification-compte',
+      component: VueVerificationCompte,
     },
     {
       path: '/conducteur/infos-personnelles',

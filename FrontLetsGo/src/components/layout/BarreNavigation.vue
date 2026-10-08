@@ -106,17 +106,41 @@ onBeforeUnmount(() => {
 
       <!-- Actions à droite -->
       <div class="navbar-actions">
-        <!-- Profil / Connexion avec Dropdown Déconnexion -->
-        <div class="conteneur-menu-profil" ref="refMenuProfil">
+        <!-- Visiteur NON CONNECTÉ : Boutons d'accès modernes & épurés -->
+        <div v-if="!estConnecte" class="zone-connexion-visiteur">
+          <router-link
+            to="/inscription"
+            class="bouton-inscription-navbar"
+          >
+            S'inscrire
+          </router-link>
+
+          <router-link
+            to="/connexion"
+            class="bouton-connexion-navbar-moderne"
+          >
+            <!-- <span class="icone-badge-connexion">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
+                <polyline points="10 17 15 12 10 7" />
+                <line x1="15" y1="12" x2="3" y2="12" />
+              </svg>
+            </span> -->
+            <span class="texte-bouton-connexion">Connexion</span>
+          </router-link>
+        </div>
+
+        <!-- Profil avec Dropdown Déconnexion pour utilisateur CONNECTÉ -->
+        <div v-else class="conteneur-menu-profil" ref="refMenuProfil">
           <button
             type="button"
             class="bouton-compte-navbar"
             @click="basculerMenuProfil"
             :aria-expanded="menuProfilOuvert"
-            :title="estConnecte ? 'Mon compte' : 'Se connecter'"
+            title="Mon compte"
           >
             <img
-              v-if="estConnecte && avatarAffiche"
+              v-if="avatarAffiche"
               :src="avatarAffiche"
               :alt="nomCompletAffiche"
               class="avatar-navbar"
@@ -135,11 +159,10 @@ onBeforeUnmount(() => {
             </svg>
 
             <span class="nom-utilisateur-navbar">
-              {{ estConnecte ? (utilisateur.prenom || 'Mon compte') : 'Connexion' }}
+              {{ utilisateur.prenom || 'Mon compte' }}
             </span>
 
             <svg
-              v-if="estConnecte"
               width="14"
               height="14"
               viewBox="0 0 24 24"
@@ -315,7 +338,96 @@ onBeforeUnmount(() => {
 .navbar-actions {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 14px;
+}
+
+/* ==========================================================================
+   ACTIONS VISITEUR NON CONNECTÉ (DESIGN ÉPURÉ & MODERNE)
+   ========================================================================== */
+.zone-connexion-visiteur {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.bouton-inscription-navbar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 14px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #475569;
+  text-decoration: none;
+  border-radius: 9999px;
+  transition: all 0.2s ease;
+  font-family: inherit;
+}
+
+.bouton-inscription-navbar:hover {
+  color: #111627;
+  background-color: #F1F5F9;
+}
+
+.bouton-connexion-navbar-moderne {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background-color: #FFFFFF;
+  color: #FF4D2D;
+  border: 1px solid #FF4D2D;
+  border-radius: 9999px;
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 700;
+  font-family: inherit;
+  letter-spacing: -0.2px;
+  cursor: pointer;
+  box-shadow: none !important;
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.bouton-connexion-navbar-moderne:hover {
+  background-color: #FF4D2D;
+  border-color: #FF4D2D;
+  color: #FFFFFF;
+  transform: translateY(-1px);
+}
+
+.icone-badge-connexion {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background-color: rgba(255, 255, 255, 0.12);
+  color: #FFFFFF;
+  transition: all 0.2s ease;
+}
+
+.bouton-connexion-navbar-moderne:hover .icone-badge-connexion {
+  background-color: #FFFFFF;
+  color: #FF4D2D;
+}
+
+.texte-bouton-connexion {
+  line-height: 1;
+}
+
+@media (max-width: 640px) {
+  .bouton-inscription-navbar {
+    display: none;
+  }
+  .bouton-connexion-navbar-moderne {
+    padding: 6px 12px 6px 8px;
+    font-size: 13px;
+  }
+  .icone-badge-connexion {
+    width: 22px;
+    height: 22px;
+  }
 }
 
 .conteneur-menu-profil {

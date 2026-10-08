@@ -135,12 +135,22 @@ export const useAuthentificationStore = defineStore('authentification', () => {
       return { succes: true }
     } catch (err) {
       console.error('Erreur de connexion:', err)
-      const detail = err.response?.data?.detail
+      const dataErr = err.response?.data || {}
+      const detail = dataErr.detail
       const message = Array.isArray(detail)
         ? detail[0]
-        : (detail || 'Identifiants incorrects. Veuillez vérifier votre adresse e-mail ou numéro de téléphone et mot de passe.')
+        : (typeof detail === 'string' ? detail : (detail || 'Identifiants incorrects. Veuillez vérifier votre adresse e-mail ou numéro de téléphone et mot de passe.'))
+      
+      const nonVerifie = Boolean(dataErr.non_verifie?.[0] ?? dataErr.non_verifie)
+      const emailNonVerifie = Array.isArray(dataErr.email) ? dataErr.email[0] : (dataErr.email || '')
+
       erreur.value = message
-      return { succes: false, erreur: message }
+      return { 
+        succes: false, 
+        erreur: message,
+        nonVerifie: nonVerifie,
+        email: emailNonVerifie
+      }
     } finally {
       chargement.value = false
     }
@@ -175,6 +185,47 @@ export const useAuthentificationStore = defineStore('authentification', () => {
 
       erreur.value = message
       return { succes: false, erreur: message }
+    } finally {
+      chargement.value = false
+    }
+  }
+
+  // Vérification de code OTP d'activation de compte
+  async function verifierCode(donnees) {
+    chargement.value = true
+    erreur.value = null
+    try {
+      const reponse = await serviceAuth.verifierCode(donnees)
+      // Le compte est activé avec succès en base.
+      // L'utilisateur est ensuite redirigé vers /connexion pour saisir son mot de passe ou utiliser l'autofill.
+      return { 
+        succes: true, 
+        message: reponse.message, 
+        dejaActif: reponse.deja_actif,
+        tokens: reponse.tokens,
+      }
+    } catch (err) {
+      console.error("Erreur vérification code:", err)
+      const msg = err.response?.data?.detail || "Code incorrect ou expiré. Veuillez vérifier et réessayer."
+      erreur.value = msg
+      return { succes: false, erreur: msg }
+    } finally {
+      chargement.value = false
+    }
+  }
+
+  // Renvoyer le code OTP de confirmation
+  async function renvoyerCode(email) {
+    chargement.value = true
+    erreur.value = null
+    try {
+      const reponse = await serviceAuth.renvoyerCode({ email })
+      return { succes: true, message: reponse.message, dejaActif: reponse.deja_actif }
+    } catch (err) {
+      console.error("Erreur renvoi code:", err)
+      const msg = err.response?.data?.detail || "Impossible de renvoyer le code. Veuillez patienter avant de réessayer."
+      erreur.value = msg
+      return { succes: false, erreur: msg }
     } finally {
       chargement.value = false
     }
@@ -232,5 +283,10 @@ export const useAuthentificationStore = defineStore('authentification', () => {
     marquerProfilComplet,
     definirIntentionRedirection,
     consommerIntentionRedirection,
+    verifierCode,
+    renvoyerCode,
   }
 })
+
+// Alias pour compatibilité
+export const useAuthStore = useAuthentificationStore
