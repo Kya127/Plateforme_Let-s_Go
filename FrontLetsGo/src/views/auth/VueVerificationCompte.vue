@@ -41,14 +41,14 @@
         <div class="titres-groupe">
           <h1 class="titre-principal">Vérification de sécurité</h1>
           <p class="texte-description">
-            Pour activer votre compte et sécuriser vos futurs trajets, veuillez saisir le code à 6 chiffres envoyé à votre adresse e-mail :
+            Pour activer votre compte et sécuriser vos futurs trajets, entrez le code mail envoyé sur ce mail :
           </p>
           <div class="badge-email-destinataire">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
               <polyline points="22,6 12,13 2,6"/>
             </svg>
-            <strong>{{ emailAffiche }}</strong>
+            <strong>{{ emailMasque }}</strong>
           </div>
         </div>
 
@@ -147,7 +147,20 @@ const authStore = useAuthStore()
 
 // Récupération de l'email depuis l'URL ou le store
 const emailCible = ref(route.query.email || authStore.utilisateur?.email || '')
-const emailAffiche = computed(() => emailCible.value || 'votre adresse e-mail')
+
+function masquerEmail(adresse) {
+  if (!adresse || typeof adresse !== 'string' || !adresse.includes('@')) {
+    return adresse || 'votre adresse e-mail'
+  }
+  const [identifiant, domaine] = adresse.split('@')
+  if (identifiant.length <= 2) {
+    return `${identifiant}*****@${domaine}`
+  }
+  const visible = identifiant.slice(0, 3)
+  return `${visible}*****@${domaine}`
+}
+
+const emailMasque = computed(() => masquerEmail(emailCible.value))
 
 // État des 6 cases OTP
 const casesOtp = ref(['', '', '', '', '', ''])

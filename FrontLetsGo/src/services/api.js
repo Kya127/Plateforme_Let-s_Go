@@ -157,6 +157,24 @@ export const serviceAuth = {
     return response.data
   },
 
+  // Demande de réinitialisation de mot de passe (envoi code OTP)
+  async demanderResetMotDePasse(donnees) {
+    const response = await apiBackend.post('auth/mot-de-passe-oublie/', donnees)
+    return response.data
+  },
+
+  // Vérification intermédiaire du code OTP pour le reset de mot de passe
+  async verifierCodeReset(donnees) {
+    const response = await apiBackend.post('auth/verifier-code-reset/', donnees)
+    return response.data
+  },
+
+  // Validation finale du code OTP et nouveau mot de passe
+  async reinitialiserMotDePasse(donnees) {
+    const response = await apiBackend.post('auth/reinitialiser-mot-de-passe/', donnees)
+    return response.data
+  },
+
   // Profil complet de l'utilisateur connecté
   async getProfil() {
     const response = await apiBackend.get('auth/profile/')

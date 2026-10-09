@@ -16,7 +16,7 @@ class CustomTokenObtainPairView(TokenObtainPairView):
     serializer_class = CustomTokenObtainPairSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 from .models import User, VerificationDocument, CodeVerification
-from .services import creer_et_envoyer_code_otp
+from .services import creer_et_envoyer_code_otp, creer_et_envoyer_code_reset_mdp
 from django.utils import timezone
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.views import APIView
@@ -334,6 +334,207 @@ class PublicDriverProfileView(APIView):
             "evaluations": evals_serialized,
         }
         return Response(data, status=status.HTTP_200_OK)
+
+
+class DemandeResetMotDePasseView(APIView):
+    """
+    Endpoint de demande de réinitialisation de mot de passe :
+    Reçoit l'adresse e-mail, génère un code OTP et l'envoie via Brevo.
+    """
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        email = request.data.get('email', '').strip().lower()
+        if not email:
+            return Response(
+                {"detail": "Veuillez renseigner votre adresse e-mail."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        user = User.objects.filter(email__iexact=email).first()
+
+        if user:
+            # Vérifier le délai anti-spam (60 secondes)
+            dernier_code = CodeVerification.objects.filter(
+                user=user,
+                type_code=CodeVerification.TypeCode.RESET_PASSWORD
+            ).order_by('-created_at').first()
+
+            if dernier_code:
+                ecoule = (timezone.now() - dernier_code.created_at).total_seconds()
+                if ecoule < 60:
+                    attente = max(1, int(60 - ecoule))
+                    return Response({
+                        "succes": True,
+                        "deja_envoye": True,
+                        "secondes_restantes": attente,
+                        "message": f"Un code vous a déjà été envoyé. Vous pourrez en redemander un nouveau dans {attente} seconde(s)."
+                    }, status=status.HTTP_200_OK)
+
+            creer_et_envoyer_code_reset_mdp(user, canal='EMAIL')
+
+        # Pour des raisons de sécurité (anti-énumération), on retourne toujours un message de succès
+        return Response({
+            "succes": True,
+            "message": "Si un compte est associé à cette adresse e-mail, un code de réinitialisation à 6 chiffres vous a été envoyé."
+        }, status=status.HTTP_200_OK)
+
+
+class ReinitialiserMotDePasseView(APIView):
+    """
+    Endpoint de validation du code OTP et définition du nouveau mot de passe.
+    """
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        email = request.data.get('email', '').strip().lower()
+        code = str(request.data.get('code', '')).strip()
+        nouveau_mot_de_passe = request.data.get('nouveau_mot_de_passe', '')
+
+        if not email:
+            return Response(
+                {"detail": "L'adresse e-mail est obligatoire."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        if not code or len(code) != 6:
+            return Response(
+                {"detail": "Veuillez renseigner le code à 6 chiffres."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        if not nouveau_mot_de_passe or len(nouveau_mot_de_passe) < 8:
+            return Response(
+                {"detail": "Le nouveau mot de passe doit comporter au moins 8 caractères."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        user = User.objects.filter(email__iexact=email).first()
+        if not user:
+            return Response(
+                {"detail": "Aucun compte correspondant trouvé."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Récupérer le dernier code de réinitialisation actif
+        code_obj = CodeVerification.objects.filter(
+            user=user,
+            type_code=CodeVerification.TypeCode.RESET_PASSWORD,
+            est_utilise=False
+        ).order_by('-created_at').first()
+
+        if not code_obj:
+            return Response(
+                {"detail": "Aucun code de réinitialisation valide trouvé. Veuillez en demander un nouveau."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Vérifier si expiré
+        if code_obj.est_expire:
+            return Response(
+                {"detail": "Ce code a expiré (validité 15 minutes). Veuillez demander un nouveau code."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Vérifier le nombre de tentatives
+        if code_obj.tentatives >= 5:
+            return Response(
+                {"detail": "Nombre maximum de tentatives dépassé. Veuillez demander un nouveau code."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Vérifier si le code correspond
+        if code_obj.code != code:
+            code_obj.tentatives += 1
+            code_obj.save(update_fields=['tentatives'])
+            restantes = max(0, 5 - code_obj.tentatives)
+            return Response(
+                {"detail": f"Code incorrect. Il vous reste {restantes} tentative(s)."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Succès : mise à jour du mot de passe
+        user.set_password(nouveau_mot_de_passe)
+        if not user.is_active:
+            user.is_active = True
+        user.save()
+
+        # Marquer le code comme utilisé
+        code_obj.est_utilise = True
+        code_obj.save(update_fields=['est_utilise'])
+
+        return Response({
+            "succes": True,
+            "message": "Votre mot de passe a été réinitialisé avec succès. Vous pouvez maintenant vous connecter."
+        }, status=status.HTTP_200_OK)
+
+
+class VerifierCodeResetView(APIView):
+    """
+    Endpoint de vérification intermédiaire du code OTP pour le reset de mot de passe.
+    Permet à l'étape 1 de valider le code avant de passer à l'étape 2 (saisie du nouveau mot de passe).
+    """
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        email = request.data.get('email', '').strip().lower()
+        code = str(request.data.get('code', '')).strip()
+
+        if not email:
+            return Response(
+                {"detail": "L'adresse e-mail est obligatoire."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        if not code or len(code) != 6:
+            return Response(
+                {"detail": "Veuillez renseigner le code à 6 chiffres."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        user = User.objects.filter(email__iexact=email).first()
+        if not user:
+            return Response(
+                {"detail": "Aucun compte correspondant trouvé."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        code_obj = CodeVerification.objects.filter(
+            user=user,
+            type_code=CodeVerification.TypeCode.RESET_PASSWORD,
+            est_utilise=False
+        ).order_by('-created_at').first()
+
+        if not code_obj:
+            return Response(
+                {"detail": "Aucun code de réinitialisation actif. Veuillez en demander un nouveau."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if code_obj.est_expire:
+            return Response(
+                {"detail": "Ce code a expiré (validité 15 minutes). Veuillez demander un nouveau code."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if code_obj.tentatives >= 5:
+            return Response(
+                {"detail": "Nombre maximum de tentatives dépassé. Veuillez demander un nouveau code."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if code_obj.code != code:
+            code_obj.tentatives += 1
+            code_obj.save(update_fields=['tentatives'])
+            restantes = max(0, 5 - code_obj.tentatives)
+            return Response(
+                {"detail": f"Code incorrect. Il vous reste {restantes} tentative(s)."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        return Response({
+            "succes": True,
+            "message": "Code vérifié avec succès !"
+        }, status=status.HTTP_200_OK)
+
+
 
 
 

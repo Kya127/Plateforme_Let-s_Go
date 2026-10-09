@@ -134,9 +134,12 @@
               <label for="motDePasse" class="label-champ">
                 Mot de passe <span class="etoile-requise">*</span>
               </label>
-              <a href="#oubli" class="lien-oubli" @click.prevent="motDePasseOublie">
+              <router-link
+                :to="{ path: '/mot-de-passe-oublie', query: { email: emailPourReset } }"
+                class="lien-oubli"
+              >
                 Mot de passe oublié ?
-              </a>
+              </router-link>
             </div>
 
             <div class="conteneur-input" :class="{ 'input-invalide': erreurs.motDePasse }">
@@ -239,7 +242,7 @@
 </template>
 
 <script setup>
-import { reactive, ref, onMounted, watch } from 'vue'
+import { reactive, ref, computed, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthentificationStore } from '@/stores/authentification'
 
@@ -261,6 +264,13 @@ const formulaire = reactive({
   motDePasse: '',
 })
 
+const emailPourReset = computed(() => {
+  if (formulaire.identifiant && formulaire.identifiant.includes('@')) {
+    return formulaire.identifiant.trim()
+  }
+  return localStorage.getItem('letsgo_dernier_email') || formulaire.identifiant || undefined
+})
+
 const erreurs = reactive({
   identifiant: '',
   motDePasse: '',
@@ -273,10 +283,15 @@ function synchroniserAvecUrl() {
   // Pré-remplir l'e-mail s'il provient de la redirection d'inscription ou d'activation
   if (route.query.email) {
     formulaire.identifiant = String(route.query.email).trim()
+    if (formulaire.identifiant.includes('@')) {
+      localStorage.setItem('letsgo_dernier_email', formulaire.identifiant)
+    }
   }
 
-  // Affichage du bandeau de confirmation d'inscription ou d'activation
-  if (route.query.active === '1') {
+  // Affichage du bandeau de confirmation d'inscription, activation ou réinitialisation
+  if (route.query.reset === '1') {
+    messageSucces.value = 'Votre mot de passe a été réinitialisé avec succès ! Connectez-vous avec vos nouveaux identifiants.'
+  } else if (route.query.active === '1') {
     messageSucces.value = 'Votre compte a été vérifié avec succès ! Connectez-vous avec vos identifiants pour continuer.'
   } else if (route.query.inscrit === '1') {
     messageSucces.value = 'Votre compte a été créé avec succès ! Connectez-vous avec votre mot de passe pour commencer.'

@@ -417,6 +417,8 @@ const gererInscription = async () => {
     })
 
     if (reponse.succes) {
+      // Sauvegarder l'e-mail du compte pour les flux d'activation et mot de passe oublié
+      localStorage.setItem('letsgo_dernier_email', formulaire.email.trim())
       // Redirection immédiate vers la page de vérification par code OTP
       router.push({
         path: '/verification-compte',

@@ -19,8 +19,12 @@ def creer_et_envoyer_code_otp(user, canal='EMAIL'):
     Génère un nouveau code OTP de vérification pour l'utilisateur,
     l'enregistre en base de données et l'envoie par e-mail.
     """
-    # 1. Invalider les anciens codes non utilisés pour cet utilisateur
-    CodeVerification.objects.filter(user=user, est_utilise=False).update(est_utilise=True)
+    # 1. Invalider les anciens codes d'activation non utilisés pour cet utilisateur
+    CodeVerification.objects.filter(
+        user=user, 
+        type_code=CodeVerification.TypeCode.ACTIVATION, 
+        est_utilise=False
+    ).update(est_utilise=True)
 
     # 2. Générer un nouveau code valable 15 minutes
     code = generer_code_otp(6)
@@ -30,6 +34,7 @@ def creer_et_envoyer_code_otp(user, canal='EMAIL'):
         user=user,
         code=code,
         canal=canal,
+        type_code=CodeVerification.TypeCode.ACTIVATION,
         expires_at=expires_at
     )
 
@@ -141,7 +146,7 @@ https://letsgo.sn
         </p>
         <div class="code-box">
           <div class="code-number">{code}</div>
-          <div class="code-meta">⏱ Valable pendant 15 minutes</div>
+          <div class="code-meta"> Valable pendant 15 minutes</div>
         </div>
         <p class="paragraph">
           Saisissez ces 6 chiffres sur l'écran de confirmation pour activer immédiatement votre accès.
@@ -174,3 +179,181 @@ https://letsgo.sn
         print(f"\n=========================================\n[OTP LET'S GO - DEV FALLBACK] Code pour {user.email} : {code}\n(Erreur SMTP : {e})\n=========================================\n")
 
     return code_obj
+
+
+def creer_et_envoyer_code_reset_mdp(user, canal='EMAIL'):
+    """
+    Génère un code OTP de réinitialisation de mot de passe pour l'utilisateur,
+    l'enregistre en base de données et l'envoie par e-mail avec un template dédié.
+    """
+    # 1. Invalider les anciens codes de réinitialisation non utilisés pour cet utilisateur
+    CodeVerification.objects.filter(
+        user=user,
+        type_code=CodeVerification.TypeCode.RESET_PASSWORD,
+        est_utilise=False
+    ).update(est_utilise=True)
+
+    # 2. Générer un nouveau code valable 15 minutes
+    code = generer_code_otp(6)
+    expires_at = timezone.now() + timedelta(minutes=15)
+
+    code_obj = CodeVerification.objects.create(
+        user=user,
+        code=code,
+        canal=canal,
+        type_code=CodeVerification.TypeCode.RESET_PASSWORD,
+        expires_at=expires_at
+    )
+
+    # 3. Préparer l'e-mail de réinitialisation
+    sujet = f"Réinitialisation de votre mot de passe LET'S GO : {code}"
+    prenom = user.first_name or "Passager"
+
+    corps_texte = f"""Bonjour {prenom},
+
+Vous avez demandé la réinitialisation de votre mot de passe sur LET'S GO.
+
+Voici votre code de confirmation à 6 chiffres :
+{code}
+
+Ce code est valable pendant 15 minutes. Si vous n'êtes pas à l'origine de cette demande, vous pouvez ignorer cet e-mail, votre mot de passe actuel reste inchangé.
+
+L'équipe LET'S GO
+https://letsgo.sn
+"""
+
+    corps_html = f"""
+    <!DOCTYPE html>
+    <html lang="fr">
+    <head>
+      <meta charset="utf-8">
+      <title>Réinitialisation de votre mot de passe LET'S GO</title>
+      <style>
+        body {{
+          margin: 0;
+          padding: 0;
+          background-color: #F8FAFC;
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+          color: #111627;
+        }}
+        .email-container {{
+          max-width: 540px;
+          margin: 30px auto;
+          background: #FFFFFF;
+          border-radius: 20px;
+          border: 1px solid #E2E8F0;
+          padding: 36px 32px;
+          box-sizing: border-box;
+        }}
+        .header-brand {{
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          margin-bottom: 24px;
+        }}
+        .brand-logo {{
+          font-size: 24px;
+          font-weight: 900;
+          color: #FF4D2D;
+          letter-spacing: -0.5px;
+          text-decoration: none;
+        }}
+        .greeting {{
+          font-size: 18px;
+          font-weight: 700;
+          color: #111627;
+          margin-bottom: 12px;
+        }}
+        .paragraph {{
+          font-size: 14px;
+          line-height: 1.6;
+          color: #475569;
+          margin-bottom: 24px;
+        }}
+        .code-box {{
+          background: #FFF5F2;
+          border: 2px dashed #FF4D2D;
+          border-radius: 16px;
+          padding: 20px;
+          text-align: center;
+          margin: 28px 0;
+        }}
+        .code-number {{
+          font-size: 38px;
+          font-weight: 900;
+          color: #FF4D2D;
+          letter-spacing: 8px;
+          display: inline-block;
+          font-family: monospace, Courier;
+        }}
+        .code-meta {{
+          font-size: 12px;
+          color: #64748B;
+          margin-top: 8px;
+        }}
+        .security-note {{
+          background: #FFFBEB;
+          border: 1px solid #FDE68A;
+          border-radius: 12px;
+          padding: 12px 16px;
+          font-size: 13px;
+          color: #92400E;
+          margin-top: 24px;
+        }}
+        .footer {{
+          margin-top: 32px;
+          padding-top: 20px;
+          border-top: 1px solid #F1F5F9;
+          font-size: 12px;
+          color: #94A3B8;
+          text-align: center;
+        }}
+      </style>
+    </head>
+    <body>
+      <div class="email-container">
+        <div class="header-brand">
+          <span class="brand-logo">LET'S GO</span>
+        </div>
+        <div class="greeting">Bonjour {prenom},</div>
+        <p class="paragraph">
+          Vous avez demandé la réinitialisation de votre mot de passe sur <strong>LET'S GO</strong>.
+          Voici votre code de sécurité à 6 chiffres :
+        </p>
+        <div class="code-box">
+          <div class="code-number">{code}</div>
+          <div class="code-meta"> Valable pendant 15 minutes</div>
+        </div>
+        <p class="paragraph">
+          Saisissez ce code ainsi que votre nouveau mot de passe sur la page de réinitialisation pour retrouver l'accès à votre compte.
+        </p>
+        <div class="security-note">
+           <strong>Sécurité :</strong> Si vous n'êtes pas à l'origine de cette demande, vous pouvez ignorer cet e-mail. Votre mot de passe actuel ne sera pas modifié.
+        </div>
+        <div class="footer">
+          © 2026 LET'S GO — Covoiturage fiable & sécurisé au Sénégal.
+        </div>
+      </div>
+    </body>
+    </html>
+    """
+
+    from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', "LET'S GO <no-reply@letsgo.sn>")
+
+    try:
+        send_mail(
+            subject=sujet,
+            message=corps_texte,
+            from_email=from_email,
+            recipient_list=[user.email],
+            html_message=corps_html,
+            fail_silently=False
+        )
+        logger.info(f"[RESET_MDP] Code envoyé avec succès à {user.email} : {code}")
+        print(f"\n=========================================\n[RESET MDP LET'S GO] Code pour {user.email} : {code}\n=========================================\n")
+    except Exception as e:
+        logger.error(f"[RESET_MDP] Erreur lors de l'envoi du mail de réinitialisation à {user.email} : {e}")
+        print(f"\n=========================================\n[RESET MDP LET'S GO - DEV FALLBACK] Code pour {user.email} : {code}\n(Erreur SMTP : {e})\n=========================================\n")
+
+    return code_obj
+

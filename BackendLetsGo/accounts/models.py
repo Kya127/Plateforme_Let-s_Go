@@ -54,9 +54,19 @@ class CodeVerification(models.Model):
         EMAIL = 'EMAIL', 'Email'
         SMS = 'SMS', 'SMS'
 
+    class TypeCode(models.TextChoices):
+        ACTIVATION = 'ACTIVATION', 'Activation de compte'
+        RESET_PASSWORD = 'RESET_PASSWORD', 'Réinitialisation de mot de passe'
+
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='codes_verification')
     code = models.CharField(max_length=6, verbose_name="Code OTP à 6 chiffres")
     canal = models.CharField(max_length=10, choices=Canal.choices, default=Canal.EMAIL)
+    type_code = models.CharField(
+        max_length=20,
+        choices=TypeCode.choices,
+        default=TypeCode.ACTIVATION,
+        verbose_name="Type de vérification"
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     expires_at = models.DateTimeField(verbose_name="Date d'expiration")
     est_utilise = models.BooleanField(default=False, verbose_name="Déjà utilisé")

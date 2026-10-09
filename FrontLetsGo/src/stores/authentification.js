@@ -266,6 +266,62 @@ export const useAuthentificationStore = defineStore('authentification', () => {
     return cible
   }
 
+  // Demande de réinitialisation de mot de passe (envoi du code OTP)
+  async function demanderResetMotDePasse(email) {
+    chargement.value = true
+    erreur.value = null
+    try {
+      const reponse = await serviceAuth.demanderResetMotDePasse({ email })
+      return { 
+        succes: true, 
+        message: reponse.message,
+        dejaEnvoye: !!reponse.deja_envoye,
+        secondesRestantes: reponse.secondes_restantes || 60,
+      }
+    } catch (err) {
+      console.error("Erreur demande reset mdp:", err)
+      const msg = err.response?.data?.detail || "Impossible d'envoyer le code de réinitialisation. Veuillez réessayer."
+      erreur.value = msg
+      return { succes: false, erreur: msg }
+    } finally {
+      chargement.value = false
+    }
+  }
+
+  // Vérification intermédiaire du code OTP pour reset mot de passe (Étape 1)
+  async function verifierCodeReset(donnees) {
+    chargement.value = true
+    erreur.value = null
+    try {
+      const reponse = await serviceAuth.verifierCodeReset(donnees)
+      return { succes: true, message: reponse.message }
+    } catch (err) {
+      console.error("Erreur vérification code reset:", err)
+      const msg = err.response?.data?.detail || "Code invalide ou expiré. Veuillez vérifier et réessayer."
+      erreur.value = msg
+      return { succes: false, erreur: msg }
+    } finally {
+      chargement.value = false
+    }
+  }
+
+  // Validation finale du code et définition du nouveau mot de passe (Étape 2)
+  async function reinitialiserMotDePasse(donnees) {
+    chargement.value = true
+    erreur.value = null
+    try {
+      const reponse = await serviceAuth.reinitialiserMotDePasse(donnees)
+      return { succes: true, message: reponse.message }
+    } catch (err) {
+      console.error("Erreur validation reset mdp:", err)
+      const msg = err.response?.data?.detail || "Code invalide ou expiré. Veuillez vérifier et réessayer."
+      erreur.value = msg
+      return { succes: false, erreur: msg }
+    } finally {
+      chargement.value = false
+    }
+  }
+
   return {
     estConnecte,
     profilComplet,
@@ -285,6 +341,9 @@ export const useAuthentificationStore = defineStore('authentification', () => {
     consommerIntentionRedirection,
     verifierCode,
     renvoyerCode,
+    demanderResetMotDePasse,
+    verifierCodeReset,
+    reinitialiserMotDePasse,
   }
 })
 
