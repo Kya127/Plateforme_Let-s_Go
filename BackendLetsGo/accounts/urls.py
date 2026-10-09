@@ -10,6 +10,7 @@ from .views import (
     DemandeResetMotDePasseView,
     VerifierCodeResetView,
     ReinitialiserMotDePasseView,
+    GoogleAuthView,
 )
 
 urlpatterns = [
@@ -23,4 +24,5 @@ urlpatterns = [
     path('profile/', UserProfileView.as_view(), name='profile'),
     path('become-driver/', BecomeDriverView.as_view(), name='become-driver'),
     path('conducteur/<int:pk>/profil/', PublicDriverProfileView.as_view(), name='public-driver-profile'),
+    path('google/', GoogleAuthView.as_view(), name='google_auth'),
 ]

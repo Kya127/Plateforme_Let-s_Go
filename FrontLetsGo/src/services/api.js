@@ -139,6 +139,12 @@ export const serviceAuth = {
     return response.data
   },
 
+  // Connexion Google OAuth (reçoit le credential ID token de Google)
+  async connexionGoogle(credential) {
+    const response = await apiBackend.post('auth/google/', { credential })
+    return response.data
+  },
+
   // Inscription
   async inscription(donnees) {
     const response = await apiBackend.post('auth/register/', donnees)

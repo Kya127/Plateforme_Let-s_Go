@@ -156,6 +156,47 @@ export const useAuthentificationStore = defineStore('authentification', () => {
     }
   }
 
+  // Connexion avec Google OAuth
+  async function connecterAvecGoogle(credential) {
+    chargement.value = true
+    erreur.value = null
+    try {
+      const data = await serviceAuth.connexionGoogle(credential)
+
+      localStorage.setItem('letsgo_access_token', data.access)
+      if (data.refresh) {
+        localStorage.setItem('letsgo_refresh_token', data.refresh)
+      }
+
+      estConnecte.value = true
+
+      // Charger le profil réel depuis le backend
+      const profil = await serviceAuth.getProfil()
+      mapperUtilisateur(profil)
+
+      // Mémoriser l'e-mail du compte
+      if (data.user?.email) {
+        localStorage.setItem('letsgo_dernier_email', data.user.email)
+      }
+
+      return { 
+        succes: true, 
+        message: data.message,
+        isNew: data.is_new,
+        needsPhone: data.needs_phone,
+      }
+    } catch (err) {
+      console.error('Erreur de connexion Google:', err)
+      const dataErr = err.response?.data || {}
+      const detail = dataErr.detail || dataErr.error || 'Échec de la connexion avec Google. Veuillez réessayer.'
+      const message = Array.isArray(detail) ? detail[0] : detail
+      erreur.value = message
+      return { succes: false, erreur: message }
+    } finally {
+      chargement.value = false
+    }
+  }
+
   // Inscription réelle
   async function inscrire(donnees) {
     chargement.value = true
@@ -344,6 +385,7 @@ export const useAuthentificationStore = defineStore('authentification', () => {
     demanderResetMotDePasse,
     verifierCodeReset,
     reinitialiserMotDePasse,
+    connecterAvecGoogle,
   }
 })
 

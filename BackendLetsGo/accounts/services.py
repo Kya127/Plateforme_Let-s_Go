@@ -6,6 +6,10 @@ from django.utils import timezone
 from django.core.mail import send_mail
 from django.conf import settings
 from .models import CodeVerification
+from google.oauth2 import id_token
+from google.auth.transport import requests as google_requests
+from django.contrib.auth import get_user_model
+from rest_framework_simplejwt.tokens import RefreshToken
 
 logger = logging.getLogger(__name__)
 
@@ -356,4 +360,87 @@ https://letsgo.sn
         print(f"\n=========================================\n[RESET MDP LET'S GO - DEV FALLBACK] Code pour {user.email} : {code}\n(Erreur SMTP : {e})\n=========================================\n")
 
     return code_obj
+
+
+
+User = get_user_model()
+
+def verifier_et_authentifier_token_google(token_recu):
+    """
+    Vérifie la validité du token Google auprès de Google et retourne l'utilisateur
+    existant ou nouvellement créé, ainsi que ses tokens JWT.
+    """
+    try:
+        client_id = getattr(settings, 'GOOGLE_CLIENT_ID', '').strip()
+        if not client_id:
+            logger.error("[Google Auth] GOOGLE_CLIENT_ID non configuré dans settings.")
+            return None
+
+        # 1. Validation cryptographique auprès des serveurs Google
+        id_info = id_token.verify_oauth2_token(
+            token_recu,
+            google_requests.Request(),
+            client_id
+        )
+
+        # 2. Extraction des données profil certifiées par Google
+        email = id_info.get('email', '').strip().lower()
+        prenom = id_info.get('given_name', '')
+        nom = id_info.get('family_name', '')
+        photo_url = id_info.get('picture', None)
+
+        if not email:
+            raise ValueError("L'adresse e-mail n'a pas été fournie par Google.")
+
+        # 3. Récupérer ou créer l'utilisateur dans MySQL
+        user, created = User.objects.get_or_create(
+            email=email,
+            defaults={
+                'username': email,
+                'first_name': prenom,
+                'last_name': nom,
+                'telephone': None,
+                'role': User.Role.PASSAGER,
+                'is_verified': True,
+                'is_active': True,
+            }
+        )
+
+        # Si nouvel utilisateur, définir un mot de passe inutilisable sécurisé
+        if created:
+            user.set_unusable_password()
+            user.save()
+        else:
+            # S'il existait déjà mais n'était pas activé ou vérifié
+            champs_a_sauvegarder = []
+            if not user.is_active:
+                user.is_active = True
+                champs_a_sauvegarder.append('is_active')
+            if not user.is_verified:
+                user.is_verified = True
+                champs_a_sauvegarder.append('is_verified')
+            if not user.first_name and prenom:
+                user.first_name = prenom
+                champs_a_sauvegarder.append('first_name')
+            if not user.last_name and nom:
+                user.last_name = nom
+                champs_a_sauvegarder.append('last_name')
+            if champs_a_sauvegarder:
+                user.save(update_fields=champs_a_sauvegarder)
+
+        # 4. Générer les jetons JWT standard LET'S GO
+        refresh = RefreshToken.for_user(user)
+
+        return {
+            'user': user,
+            'is_new': created,
+            'needs_phone': not bool(user.telephone),
+            'photo_google': photo_url,
+            'access': str(refresh.access_token),
+            'refresh': str(refresh),
+        }
+
+    except Exception as e:
+        logger.error(f"[Google Auth] Échec de validation du token Google : {e}")
+        return None
 

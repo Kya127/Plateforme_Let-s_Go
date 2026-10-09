@@ -162,6 +162,10 @@ else:
     EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
 
 
+# Configuration Authentification Google OAuth2
+GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID', '').strip()
+
+
 # Configuration du modèle utilisateur personnalisé
 AUTH_USER_MODEL = 'accounts.User'
 

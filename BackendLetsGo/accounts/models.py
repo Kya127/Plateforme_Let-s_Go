@@ -8,7 +8,7 @@ class User(AbstractUser):
         ADMINISTRATEUR = 'ADMINISTRATEUR', 'Administrateur'
 
     email = models.EmailField(unique=True, verbose_name="Adresse email")
-    telephone = models.CharField(max_length=20, unique=True, verbose_name="Numéro de téléphone")
+    telephone = models.CharField(max_length=20, unique=True, null=True, blank=True, verbose_name="Numéro de téléphone")
     role = models.CharField(max_length=20, choices=Role.choices, default=Role.PASSAGER,verbose_name="Rôle utilisateur")
     photo = models.ImageField(upload_to='photos_profil/', blank=True, null=True)
     is_verified = models.BooleanField(default=False)  # Validé par l'admin après vérification des papiers

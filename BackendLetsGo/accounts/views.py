@@ -2,12 +2,12 @@ from rest_framework import generics, status
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework_simplejwt.views import TokenObtainPairView
-from .serializers import (
-    RegisterSerializer,
-    UserProfileSerializer,
-    BecomeDriverSerializer,
-    CustomTokenObtainPairSerializer,
-)
+from .serializers import (RegisterSerializer,UserProfileSerializer,BecomeDriverSerializer,CustomTokenObtainPairSerializer,)
+from rest_framework.views import APIView
+from .services import verifier_et_authentifier_token_google
+
+
+
 
 class CustomTokenObtainPairView(TokenObtainPairView):
     """
@@ -537,4 +537,48 @@ class VerifierCodeResetView(APIView):
 
 
 
+class GoogleAuthView(APIView):
+    permission_classes = [AllowAny]
 
+    def post(self, request):
+        token_google = request.data.get('credential')
+
+        if not token_google:
+            return Response(
+                {"error": "Le token Google (credential) est manquant.", "detail": "Le token Google est manquant."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        resultat = verifier_et_authentifier_token_google(token_google)
+
+        if not resultat:
+            return Response(
+                {"error": "Jeton Google invalide ou expiré.", "detail": "Jeton Google invalide ou expiré."},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+
+        user = resultat['user']
+
+        photo_url = resultat.get('photo_google')
+        if not photo_url and user.photo:
+            photo_url = request.build_absolute_uri(user.photo.url)
+
+        return Response({
+            "succes": True,
+            "message": "Connexion avec Google réussie",
+            "access": resultat['access'],
+            "refresh": resultat['refresh'],
+            "is_new": resultat.get('is_new', False),
+            "needs_phone": resultat.get('needs_phone', False),
+            "user": {
+                "id": user.id,
+                "email": user.email,
+                "first_name": user.first_name,
+                "last_name": user.last_name,
+                "telephone": user.telephone,
+                "role": user.role,
+                "is_verified": user.is_verified,
+                "is_profile_complete": user.is_profile_complete,
+                "photo": photo_url,
+            }
+        }, status=status.HTTP_200_OK)
