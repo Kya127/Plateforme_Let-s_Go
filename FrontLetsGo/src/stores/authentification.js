@@ -17,10 +17,13 @@ export const useAuthentificationStore = defineStore('authentification', () => {
     nomComplet: '',
     email: '',
     telephone: '',
+    adresse: '',
     photoUrl: null,
     role: 'passager', // 'passager' ou 'conducteur'
     note: 5.0,
     estConducteurVerifie: false,
+    documents: null,
+    voitures: [],
   })
 
   // Mémorise la route demandée avant redirection vers la connexion
@@ -41,7 +44,12 @@ export const useAuthentificationStore = defineStore('authentification', () => {
   })
 
   const estConducteur = computed(() => {
-    return utilisateur.value?.role === 'conducteur'
+    return (utilisateur.value?.role || '').toLowerCase() === 'conducteur'
+  })
+
+  const estAdmin = computed(() => {
+    const role = (utilisateur.value?.role || '').toLowerCase()
+    return role === 'administrateur' || role === 'admin'
   })
 
   // Synchronise le profil depuis l'API
@@ -57,14 +65,28 @@ export const useAuthentificationStore = defineStore('authentification', () => {
       nomComplet,
       email: donnees.email || '',
       telephone: donnees.telephone || '',
+      adresse: donnees.adresse || '',
       photoUrl: donnees.photo || null,
       role: donnees.role || 'passager',
       note: donnees.note || 4.8,
       estConducteurVerifie: donnees.is_verified || false,
+      documents: donnees.documents || null,
+      voitures: donnees.voitures || [],
     }
     profilComplet.value = !!donnees.is_profile_complete
     estConnecte.value = true
     localStorage.setItem('letsgo_utilisateur', JSON.stringify(utilisateur.value))
+  }
+
+  async function rafraichirProfil() {
+    try {
+      const profil = await serviceAuth.getProfil()
+      mapperUtilisateur(profil)
+      return profil
+    } catch (e) {
+      console.warn('Erreur rafraichissement profil:', e)
+      return null
+    }
   }
 
 
@@ -372,6 +394,7 @@ export const useAuthentificationStore = defineStore('authentification', () => {
     nomAffiche,
     avatarActif,
     estConducteur,
+    estAdmin,
     intentionRedirection,
     initialiserSession,
     connecter,
@@ -386,6 +409,7 @@ export const useAuthentificationStore = defineStore('authentification', () => {
     verifierCodeReset,
     reinitialiserMotDePasse,
     connecterAvecGoogle,
+    rafraichirProfil,
   }
 })
 

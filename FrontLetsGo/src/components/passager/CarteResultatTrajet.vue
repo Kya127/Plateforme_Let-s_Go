@@ -1,4 +1,5 @@
 <script setup>
+import BadgeConducteurVerifie from '@/components/common/BadgeConducteurVerifie.vue'
 const props = defineProps({
   trip: {
     type: Object,
@@ -52,7 +53,10 @@ function handleImageError(event) {
         </div>
 
         <div class="driver-info">
-          <h2>{{ trip.driver }}</h2>
+          <div class="driver-name-row">
+            <h2>{{ trip.driver }}</h2>
+            <BadgeConducteurVerifie :taille="18" />
+          </div>
 
           <div class="driver-rating">
             <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -202,8 +206,15 @@ function handleImageError(event) {
   min-width: 0;
 }
 
-.driver-info h2 {
+.driver-name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   margin: 0 0 7px;
+}
+
+.driver-name-row h2 {
+  margin: 0;
   font-size: 22px;
   line-height: 1.15;
   font-weight: 800;

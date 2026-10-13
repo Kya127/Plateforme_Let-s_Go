@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { getAvatarUrl } from '@/utils/avatar'
+import BadgeConducteurVerifie from '@/components/common/BadgeConducteurVerifie.vue'
 
 const props = defineProps({
   estConnecte: {
@@ -161,6 +162,7 @@ onBeforeUnmount(() => {
             <span class="nom-utilisateur-navbar">
               {{ utilisateur.prenom || 'Mon compte' }}
             </span>
+            <!-- <BadgeConducteurVerifie v-if="utilisateur.estConducteurVerifie" :taille="15" /> -->
 
             <svg
               width="14"
@@ -180,16 +182,33 @@ onBeforeUnmount(() => {
           <Transition name="menu-pop">
             <div v-if="menuProfilOuvert && estConnecte" class="menu-profil-deroulant">
               <div class="entete-menu-profil">
-                <img
-                  v-if="avatarAffiche"
-                  :src="avatarAffiche"
-                  :alt="nomCompletAffiche"
-                  class="avatar-menu-grand"
-                />
+                <div class="avatar-avec-crayon-wrapper">
+                  <img
+                    v-if="avatarAffiche"
+                    :src="avatarAffiche"
+                    :alt="nomCompletAffiche"
+                    class="avatar-menu-grand"
+                  />
+                  <!-- Icône crayon suspendue auprès du rond avec les initiales -->
+                  <button
+                    type="button"
+                    class="badge-crayon-avatar"
+                    title="Modifier ou compléter mon profil"
+                    aria-label="Modifier ou compléter mon profil"
+                    @click.stop="naviguerVers('/profil/modifier')"
+                  >
+                    <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>
+                    </svg>
+                  </button>
+                </div>
                 <div class="infos-utilisateur-menu">
-                  <span class="nom-complet-menu">{{ nomCompletAffiche }}</span>
-                  <span class="badge-role-menu">
-                    {{ utilisateur.estConducteurVerifie ? 'Conducteur vérifié' : 'Passager' }}
+                  <div class="nom-menu-avec-badge">
+                    <span class="nom-complet-menu">{{ nomCompletAffiche }}</span>
+                    <BadgeConducteurVerifie v-if="utilisateur.estConducteurVerifie" :taille="16" />
+                  </div>
+                  <span class="badge-role-menu" :class="{ 'role-conducteur': utilisateur.estConducteurVerifie }">
+                    {{ utilisateur.estConducteurVerifie ? 'Conducteur' : 'Passager' }}
                   </span>
                 </div>
               </div>
@@ -197,6 +216,19 @@ onBeforeUnmount(() => {
               <div class="separateur-menu"></div>
 
               <div class="liens-menu-liste">
+                <!-- Mon profil remplace Proposer un trajet selon la demande utilisateur -->
+                <button
+                  type="button"
+                  class="item-menu-profil"
+                  @click="naviguerVers('/profil')"
+                >
+                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                    <circle cx="12" cy="7" r="4" />
+                  </svg>
+                  <span>Mon profil</span>
+                </button>
+
                 <button
                   v-if="utilisateur.estConducteurVerifie"
                   type="button"
@@ -210,19 +242,6 @@ onBeforeUnmount(() => {
                     <rect x="3" y="16" width="7" height="5" />
                   </svg>
                   <span>Mon tableau de bord</span>
-                </button>
-
-                <button
-                  type="button"
-                  class="item-menu-profil"
-                  @click="naviguerVers('/publier-trajet')"
-                >
-                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
-                    <circle cx="12" cy="12" r="10" />
-                    <line x1="12" y1="8" x2="12" y2="16" />
-                    <line x1="8" y1="12" x2="16" y2="12" />
-                  </svg>
-                  <span>Proposer un trajet</span>
                 </button>
 
                 <button
@@ -494,6 +513,14 @@ onBeforeUnmount(() => {
   margin-bottom: 12px;
 }
 
+.avatar-avec-crayon-wrapper {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
 .avatar-menu-grand {
   width: 44px;
   height: 44px;
@@ -501,9 +528,43 @@ onBeforeUnmount(() => {
   object-fit: cover;
 }
 
+.badge-crayon-avatar {
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #FF4D2D;
+  color: #FFFFFF;
+  border: 2px solid #FFFFFF;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  box-shadow: none;
+  transition: transform 0.15s ease, background-color 0.15s ease;
+}
+
+.badge-crayon-avatar:hover {
+  background: #e03e1f;
+  transform: scale(1.15);
+}
+
+.badge-crayon-avatar:active {
+  transform: scale(0.95);
+}
+
 .infos-utilisateur-menu {
   display: flex;
   flex-direction: column;
+}
+
+.nom-menu-avec-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .nom-complet-menu {
@@ -514,11 +575,14 @@ onBeforeUnmount(() => {
 }
 
 .badge-role-menu {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   font-size: 11px;
-  font-weight: 600;
-  color: #10B981;
+  font-weight: 700;
+  color: #00AF54;
   background: #ECFDF5;
-  padding: 2px 6px;
+  padding: 2px 7px;
   border-radius: 6px;
   margin-top: 4px;
   width: fit-content;

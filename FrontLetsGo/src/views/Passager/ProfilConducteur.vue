@@ -48,20 +48,20 @@
                 class="driver-hero-img"
                 @error="handleAvatarError"
               />
-              <span v-if="driver.is_verified" class="badge-verified-hero" title="Conducteur vérifié par Let's Go">
-                <svg viewBox="0 0 24 24" width="16" height="16" fill="#FFFFFF">
-                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
-                </svg>
-              </span>
+              <BadgeConducteurVerifie
+                v-if="driver.is_verified"
+                class="badge-verified-hero"
+                :taille="30"
+              />
             </div>
 
             <div class="driver-identity">
-              <h2 class="driver-full-name">{{ driver.full_name }}</h2>
+              <div class="driver-title-badge-row">
+                <h2 class="driver-full-name">{{ driver.full_name }}</h2>
+                <BadgeConducteurVerifie v-if="driver.is_verified" :taille="24" />
+              </div>
               <span class="driver-sub-role">
-                <svg viewBox="0 0 24 24" width="14" height="14" fill="#10B981">
-                  <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm-2 16l-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9l-8 8z"/>
-                </svg>
-                {{ driver.is_verified ? 'Conducteur vérifié Let\'s Go' : 'Conducteur Let\'s Go' }}
+                Conducteur Let's Go
               </span>
             </div>
 
@@ -253,6 +253,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { serviceAuth } from '@/services/api'
+import BadgeConducteurVerifie from '@/components/common/BadgeConducteurVerifie.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -533,22 +534,28 @@ onMounted(() => {
 
 .badge-verified-hero {
   position: absolute;
-  bottom: 0;
-  right: 0;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: var(--emerald-green);
-  border: 2px solid #FFFFFF;
+  bottom: -3px;
+  right: -3px;
+  width: auto;
+  height: auto;
+  background: transparent;
+  border: none;
   display: flex;
   align-items: center;
   justify-content: center;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.15));
 }
 
 .driver-identity {
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+
+.driver-title-badge-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .driver-full-name {

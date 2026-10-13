@@ -11,6 +11,7 @@ class User(AbstractUser):
     telephone = models.CharField(max_length=20, unique=True, null=True, blank=True, verbose_name="Numéro de téléphone")
     role = models.CharField(max_length=20, choices=Role.choices, default=Role.PASSAGER,verbose_name="Rôle utilisateur")
     photo = models.ImageField(upload_to='photos_profil/', blank=True, null=True)
+    adresse = models.CharField(max_length=255, blank=True, null=True, verbose_name="Adresse de résidence")
     is_verified = models.BooleanField(default=False)  # Validé par l'admin après vérification des papiers
     fcm_token = models.CharField(max_length=255, blank=True, null=True, verbose_name="Token Firebase FCM")
     

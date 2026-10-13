@@ -261,6 +261,9 @@ const hydrateState = () => {
     if (!photoPreview.value && storeAuth.utilisateur?.photoUrl) {
       photoPreview.value = storeAuth.utilisateur.photoUrl
     }
+    if (!form.value.address && storeAuth.utilisateur?.adresse) {
+      form.value.address = storeAuth.utilisateur.adresse
+    }
   } catch (error) {
     console.warn('Erreur lecture état infos perso:', error)
   }

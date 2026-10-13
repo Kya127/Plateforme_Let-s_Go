@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { useAuthentificationStore } from '@/stores/authentification'
 import { serviceTrajets } from '@/services/api'
 import CarteTrajetConducteur from '@/components/conducteur/CarteTrajetConducteur.vue'
+import BadgeConducteurVerifie from '@/components/common/BadgeConducteurVerifie.vue'
 
 const routeur = useRouter()
 const storeAuth = useAuthentificationStore()
@@ -126,7 +127,8 @@ function formaterPrix(prix) {
         <div class="texte-bienvenue">
           <span class="message-salutation">Espace Conducteur</span>
           <h1 class="nom-conducteur">
-            Bonjour, {{ storeAuth.utilisateur?.prenom || storeAuth.nomAffiche }}
+            <span>Bonjour, {{ storeAuth.utilisateur?.prenom || storeAuth.nomAffiche }}</span>
+            <!-- <BadgeConducteurVerifie v-if="storeAuth.utilisateur?.estConducteurVerifie" :taille="24" /> -->
           </h1>
         </div>
 

@@ -249,15 +249,25 @@ const finishRegistration = async () => {
     }
 
     // Joindre la photo de profil si disponible dans l'étape 1
+    const profileForm = new FormData()
+    let hasProfileUpdates = false
+
     if (savedInfos?.photoDataUrl) {
       const photoProfil = dataUrlToFile(savedInfos.photoDataUrl, 'photo_profil.jpg')
       if (photoProfil) {
         formData.append('photo_profil', photoProfil)
-        // Mettre à jour aussi le profil user direct
-        const profileForm = new FormData()
         profileForm.append('photo', photoProfil)
-        serviceAuth.mettreAJourProfil(profileForm).catch(() => {})
+        hasProfileUpdates = true
       }
+    }
+
+    if (savedInfos?.form?.address) {
+      profileForm.append('adresse', savedInfos.form.address.trim())
+      hasProfileUpdates = true
+    }
+
+    if (hasProfileUpdates) {
+      serviceAuth.mettreAJourProfil(profileForm).catch(() => {})
     }
 
     // Appel API DRF pour enregistrer les documents

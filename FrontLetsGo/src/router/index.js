@@ -25,6 +25,8 @@ import ReservationConfirmee from '@/views/Passager/ReservationConfirmee.vue'
 import ProfilConducteur from '@/views/Passager/ProfilConducteur.vue'
 import VueVerificationCompte from '../views/auth/VueVerificationCompte.vue'
 import VueMotDePasseOublie from '../views/auth/VueMotDePasseOublie.vue'
+import VueMonProfil from '../views/profil/VueMonProfil.vue'
+import VueModifierProfil from '../views/profil/VueModifierProfil.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -114,6 +116,18 @@ const router = createRouter({
     component: ProfilConducteur
   },
   {
+    path: '/profil',
+    name: 'mon-profil',
+    component: VueMonProfil,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/profil/modifier',
+    name: 'modifier-profil',
+    component: VueModifierProfil,
+    meta: { requiresAuth: true },
+  },
+  {
     path: '/reservation/resume/:id?',
     name: 'resume-reservation',
     component: ResumeReservation
@@ -195,7 +209,8 @@ const router = createRouter({
   path: '/recherche-vocale',
   name: 'recherche-vocale',
   component: RechercheVocale
-}
+},
+
   ],
 })
 

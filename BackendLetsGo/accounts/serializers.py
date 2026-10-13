@@ -34,7 +34,7 @@ class CustomTokenObtainPairSerializer(serializers.Serializer):
         if '@' in identifiant:
             user = User.objects.filter(email__iexact=identifiant).first()
         else:
-            # Formatage du numéro de téléphone pour matcher en base
+            # Formatage du numéro de téléphone sénégalais pour matcher en base
             digits = re.sub(r'\D', '', identifiant)
             if digits.startswith('221') and len(digits) > 3:
                 digits_9 = digits[3:]
@@ -49,6 +49,7 @@ class CustomTokenObtainPairSerializer(serializers.Serializer):
                 User.objects.filter(telephone=identifiant).first()
             )
 
+        # Vérification cryptographique stricte du mot de passe (respect strict de la casse et des caractères)
         if user and user.check_password(password):
             if not user.is_active:
                 raise serializers.ValidationError({
@@ -81,7 +82,7 @@ class RegisterSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ('id', 'first_name', 'last_name', 'email', 'telephone', 'password', 'role')
+        fields = ('id', 'first_name', 'last_name', 'email', 'telephone', 'adresse', 'password', 'role')
         read_only_fields = ('role',)
 
     def create(self, validated_data):
@@ -92,6 +93,7 @@ class RegisterSerializer(serializers.ModelSerializer):
             first_name=validated_data.get('first_name', ''),
             last_name=validated_data.get('last_name', ''),
             telephone=validated_data['telephone'],
+            adresse=validated_data.get('adresse', ''),
             password=validated_data['password'],
             role=User.Role.PASSAGER,
             is_active=False # Compte inactif en attente de vérification du code OTP
@@ -107,15 +109,54 @@ class RegisterSerializer(serializers.ModelSerializer):
 
 class UserProfileSerializer(serializers.ModelSerializer):
     is_profile_complete = serializers.ReadOnlyField()  # Champ calculé (read-only)
+    documents = serializers.SerializerMethodField()
+    voitures = serializers.SerializerMethodField()
 
     class Meta:
         model = User
         fields = (
             'id', 'first_name', 'last_name', 'email', 
-            'telephone', 'role', 'is_verified', 
-            'is_profile_complete', 'photo', 'fcm_token'
+            'telephone', 'adresse', 'role', 'is_verified', 
+            'is_profile_complete', 'photo', 'fcm_token',
+            'documents', 'voitures'
         )
-        read_only_fields = ('id', 'role', 'is_profile_complete')             
+        read_only_fields = ('id', 'role', 'is_profile_complete', 'documents', 'voitures')
+
+    def get_documents(self, obj):
+        latest_doc = obj.verification_documents.order_by('-created_at').first()
+        if latest_doc:
+            request = self.context.get('request')
+            return {
+                'id': latest_doc.id,
+                'permis_conduire': request.build_absolute_uri(latest_doc.permis_conduire.url) if latest_doc.permis_conduire and request else (latest_doc.permis_conduire.url if latest_doc.permis_conduire else None),
+                'carte_grise': request.build_absolute_uri(latest_doc.carte_grise.url) if latest_doc.carte_grise and request else (latest_doc.carte_grise.url if latest_doc.carte_grise else None),
+                'assurance': request.build_absolute_uri(latest_doc.assurance.url) if latest_doc.assurance and request else (latest_doc.assurance.url if latest_doc.assurance else None),
+                'photo_vehicule': request.build_absolute_uri(latest_doc.photo_vehicule.url) if latest_doc.photo_vehicule and request else (latest_doc.photo_vehicule.url if latest_doc.photo_vehicule else None),
+                'status': latest_doc.status,
+                'motif_rejet': latest_doc.motif_rejet or '',
+                'created_at': latest_doc.created_at,
+            }
+        return None
+
+    def get_voitures(self, obj):
+        request = self.context.get('request')
+        voitures = obj.voitures.all()
+        result = []
+        for v in voitures:
+            photo_url = None
+            if v.photo_voiture:
+                photo_url = request.build_absolute_uri(v.photo_voiture.url) if request else v.photo_voiture.url
+            result.append({
+                'id': v.id,
+                'marque_voiture': v.marque_voiture,
+                'model_voiture': v.model_voiture,
+                'plaque': v.plaque,
+                'nombres_de_places': v.nombres_de_places,
+                'couleur': v.couleur,
+                'est_climatisee': v.est_climatisee,
+                'photo_voiture': photo_url,
+            })
+        return result
 
 
 class BecomeDriverSerializer(serializers.ModelSerializer):

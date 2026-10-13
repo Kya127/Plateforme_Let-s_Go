@@ -1,4 +1,5 @@
 <script setup>
+import BadgeConducteurVerifie from '@/components/common/BadgeConducteurVerifie.vue'
 defineProps({
   id: {
     type: [Number, String],
@@ -53,11 +54,7 @@ function handleImageError(event) {
       <div class="driver-meta">
         <div class="driver-name-row">
           <h3 class="driver-name">{{ nom }}</h3>
-          <span class="badge-verifie-mini" title="Conducteur vérifié">
-            <svg viewBox="0 0 24 24" width="13" height="13" fill="#10B981">
-              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
-            </svg>
-          </span>
+          <BadgeConducteurVerifie :taille="18" />
         </div>
         <div class="driver-rating">
           <svg viewBox="0 0 24 24" width="14" height="14" fill="#FF4D2D" class="star-icon">
