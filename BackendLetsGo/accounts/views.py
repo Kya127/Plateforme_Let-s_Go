@@ -246,18 +246,20 @@ class BecomeDriverView(APIView):
 
         if serializer.is_valid():
             doc = serializer.save(user=user)
-            # Validation automatique après soumission des documents (règle demandée pour le flow)
-            doc.status = VerificationDocument.Status.APPROUVE
-            doc.save(update_fields=['status'])
+            # Le dossier reste STRICTEMENT EN ATTENTE de validation par l'administrateur
+            doc.status = VerificationDocument.Status.EN_ATTENTE
+            doc.motif_rejet = ''
+            doc.save(update_fields=['status', 'motif_rejet'])
 
-            user.role = 'CONDUCTEUR'
-            user.is_verified = True
+            # L'utilisateur conserve son rôle PASSAGER et n'est pas vérifié tant que l'admin n'a pas validé son dossier
+            user.role = User.Role.PASSAGER
+            user.is_verified = False
             user.save(update_fields=['role', 'is_verified'])
             
             return Response({
-                "message": "Votre demande pour devenir conducteur a été soumise et validée avec succès. Vous pouvez désormais publier des trajets.",
-                "status": "APPROVED",
-                "is_verified": True
+                "message": "Votre demande pour devenir conducteur a été soumise avec succès. Votre dossier est en cours d'examen par notre équipe.",
+                "status": "PENDING",
+                "is_verified": False
             }, status=status.HTTP_201_CREATED)
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

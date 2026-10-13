@@ -376,12 +376,16 @@ async function gererConnexion() {
     )
 
     if (resultat.succes) {
-      // Redirection vers l'intention précédente ou la page d'accueil
-      const redirectionCible =
-        route.query.redirection ||
-        storeAuth.consommerIntentionRedirection('/accueil')
+      // Si l'utilisateur est un administrateur, redirection directe vers le tableau de bord admin
+      if (storeAuth.estAdmin) {
+        routeur.push(route.query.redirection || '/admin')
+      } else {
+        const redirectionCible =
+          route.query.redirection ||
+          storeAuth.consommerIntentionRedirection('/accueil')
 
-      routeur.push(redirectionCible)
+        routeur.push(redirectionCible)
+      }
     } else {
       if (resultat.nonVerifie) {
         compteNonVerifieEmail.value = resultat.email || formulaire.identifiant.trim()

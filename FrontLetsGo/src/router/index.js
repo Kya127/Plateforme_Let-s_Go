@@ -28,6 +28,18 @@ import VueMotDePasseOublie from '../views/auth/VueMotDePasseOublie.vue'
 import VueMonProfil from '../views/profil/VueMonProfil.vue'
 import VueModifierProfil from '../views/profil/VueModifierProfil.vue'
 
+// Vues Administration LET'S GO
+import LayoutAdmin from '../views/admin/LayoutAdmin.vue'
+import VueDashboardAdmin from '../views/admin/VueDashboardAdmin.vue'
+import VueUtilisateursAdmin from '../views/admin/VueUtilisateursAdmin.vue'
+import VueDetailUtilisateurAdmin from '../views/admin/VueDetailUtilisateurAdmin.vue'
+import VueConducteursAdmin from '../views/admin/VueConducteursAdmin.vue'
+import VueVerificationConducteurAdmin from '../views/admin/VueVerificationConducteurAdmin.vue'
+import VueTrajetsAdmin from '../views/admin/VueTrajetsAdmin.vue'
+import VueReservationsAdmin from '../views/admin/VueReservationsAdmin.vue'
+import VueAvisAdmin from '../views/admin/VueAvisAdmin.vue'
+import VueStatistiquesAdmin from '../views/admin/VueStatistiquesAdmin.vue'
+
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
@@ -211,6 +223,111 @@ const router = createRouter({
   component: RechercheVocale
 },
 
+    // =========================================================================
+    // PARCOURS ADMINISTRATEUR LET'S GO
+    // =========================================================================
+    {
+      path: '/admin',
+      component: LayoutAdmin,
+      meta: { requiresAuth: true, requiresAdmin: true },
+      children: [
+        {
+          path: '',
+          name: 'admin-dashboard',
+          component: VueDashboardAdmin,
+          meta: { title: "Vue d'ensemble", breadcrumbs: [{ label: "Vue d'ensemble" }] },
+        },
+        {
+          path: 'utilisateurs',
+          name: 'admin-utilisateurs',
+          component: VueUtilisateursAdmin,
+          meta: {
+            title: 'Gestion des Utilisateurs',
+            breadcrumbs: [{ label: 'Administration', to: '/admin' }, { label: 'Utilisateurs' }],
+          },
+        },
+        {
+          path: 'utilisateurs/:id',
+          name: 'admin-utilisateur-detail',
+          component: VueDetailUtilisateurAdmin,
+          meta: {
+            title: 'Fiche Utilisateur',
+            breadcrumbs: [
+              { label: 'Administration', to: '/admin' },
+              { label: 'Utilisateurs', to: '/admin/utilisateurs' },
+              { label: 'Détail utilisateur' },
+            ],
+          },
+        },
+        {
+          path: 'demandes',
+          name: 'admin-demandes',
+          component: VueConducteursAdmin,
+          meta: {
+            title: 'Demandes de Conducteurs',
+            breadcrumbs: [{ label: 'Administration', to: '/admin' }, { label: 'Demandes' }],
+          },
+        },
+        {
+          path: 'demandes/:id/verification',
+          name: 'admin-demande-verification',
+          component: VueVerificationConducteurAdmin,
+          meta: {
+            title: 'Vérification Conducteur',
+            breadcrumbs: [
+              { label: 'Administration', to: '/admin' },
+              { label: 'Demandes', to: '/admin/demandes' },
+              { label: 'Vérification' },
+            ],
+          },
+        },
+        // Rétrocompatibilité conducteurs -> demandes
+        {
+          path: 'conducteurs',
+          redirect: '/admin/demandes',
+        },
+        {
+          path: 'conducteurs/:id/verification',
+          redirect: to => `/admin/demandes/${to.params.id}/verification`,
+        },
+        {
+          path: 'trajets',
+          name: 'admin-trajets',
+          component: VueTrajetsAdmin,
+          meta: {
+            title: 'Supervision des Trajets',
+            breadcrumbs: [{ label: 'Administration', to: '/admin' }, { label: 'Trajets' }],
+          },
+        },
+        {
+          path: 'reservations',
+          name: 'admin-reservations',
+          component: VueReservationsAdmin,
+          meta: {
+            title: 'Gestion des Réservations',
+            breadcrumbs: [{ label: 'Administration', to: '/admin' }, { label: 'Réservations' }],
+          },
+        },
+        {
+          path: 'avis',
+          name: 'admin-avis',
+          component: VueAvisAdmin,
+          meta: {
+            title: 'Modération des Avis',
+            breadcrumbs: [{ label: 'Administration', to: '/admin' }, { label: 'Avis' }],
+          },
+        },
+        {
+          path: 'statistiques',
+          name: 'admin-statistiques',
+          component: VueStatistiquesAdmin,
+          meta: {
+            title: 'Statistiques & Performance',
+            breadcrumbs: [{ label: 'Administration', to: '/admin' }, { label: 'Statistiques' }],
+          },
+        },
+      ],
+    },
   ],
 })
 
@@ -222,6 +339,23 @@ router.beforeEach((to, from) => {
     return {
       name: 'connexion',
       query: { redirection: to.fullPath },
+    }
+  }
+
+  // 1.bis. Protection des routes administration : vérifie le statut admin
+  if (to.matched.some((record) => record.meta.requiresAdmin)) {
+    if (!storeAuth.estConnecte) {
+      return {
+        name: 'connexion',
+        query: { redirection: to.fullPath },
+      }
+    }
+    // Si l'utilisateur est connecté mais n'est pas encore synchronisé comme admin
+    // et qu'il n'a pas de rôle admin, on le laisse si c'est le compte de test ou admin
+    const role = (storeAuth.utilisateur?.role || '').toLowerCase()
+    if (role && role !== 'administrateur' && role !== 'admin' && !storeAuth.estAdmin) {
+      // Redirection si rôle passager strict
+      return { name: 'accueil' }
     }
   }
 

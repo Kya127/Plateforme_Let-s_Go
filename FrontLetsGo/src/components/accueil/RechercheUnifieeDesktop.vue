@@ -28,7 +28,7 @@ function declencherRecherche() {
         Où allez-vous ? Voyagez moins cher partout à Dakar.
       </h1>
       <p class="hero-soustitre-principal">
-        Le covoiturage convivial et économique reliant Dakar, Thiès, Touba, Saint-Louis et toutes les régions.
+        Le covoiturage convivial et économique reliant Dakar, Mbour, Rufisque et toute la banlieue dakaroise.
       </p>
 
       <!-- BARRE DE RECHERCHE UNIFIÉE (VISIBLE SUR DESKTOP ET MOBILE) -->

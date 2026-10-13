@@ -35,6 +35,7 @@ urlpatterns = [
     path('api/reservations/', include('reservations.urls')),
     path('api/avis/', include('evaluations.urls')),
     path('api/commissions/', include('commission.urls')),
+    path('api/admin/', include('administration.urls')),
 
     # Documentation Swagger / OpenAPI
     path('api/schema/', SpectacularAPIView.as_view(), name='schema'),

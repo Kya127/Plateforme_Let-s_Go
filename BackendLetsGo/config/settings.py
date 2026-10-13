@@ -50,6 +50,7 @@ INSTALLED_APPS = [
     'commission',
     'reservations',
     'evaluations',
+    'administration',
     'drf_spectacular',
     'django_filters',
     'rest_framework_simplejwt.token_blacklist',

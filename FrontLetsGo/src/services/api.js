@@ -376,6 +376,91 @@ export const serviceCommissions = {
   },
 }
 
+// 8. Administration & Modération Plateforme
+export const serviceAdmin = {
+  // Statistiques globales et aperçu Dashboard
+  async getStats() {
+    const response = await apiBackend.get('admin/stats/')
+    return response.data
+  },
+
+  // Gestion des utilisateurs
+  async getUtilisateurs(params = {}) {
+    const response = await apiBackend.get('admin/utilisateurs/', { params })
+    return response.data
+  },
+
+  async creerUtilisateur(donnees) {
+    const response = await apiBackend.post('admin/utilisateurs/', donnees)
+    return response.data
+  },
+
+  async getUtilisateurDetail(id) {
+    const response = await apiBackend.get(`admin/utilisateurs/${id}/`)
+    return response.data
+  },
+
+  async toggleStatutUtilisateur(id) {
+    const response = await apiBackend.post(`admin/utilisateurs/${id}/toggle-statut/`)
+    return response.data
+  },
+
+  // Demandes de Conducteurs & Vérification
+  async getDemandes(params = {}) {
+    const response = await apiBackend.get('admin/demandes/', { params })
+    return response.data
+  },
+
+  // Rétrocompatibilité conducteurs
+  async getConducteurs(params = {}) {
+    const response = await apiBackend.get('admin/demandes/', { params })
+    return response.data
+  },
+
+  async getVerificationConducteur(id) {
+    const response = await apiBackend.get(`admin/conducteurs/${id}/verification/`)
+    return response.data
+  },
+
+  async approuverConducteur(id) {
+    const response = await apiBackend.post(`admin/conducteurs/${id}/approuver/`)
+    return response.data
+  },
+
+  async rejeterConducteur(id, motif) {
+    const response = await apiBackend.post(`admin/conducteurs/${id}/rejeter/`, { motif })
+    return response.data
+  },
+
+  // Trajets
+  async getTrajets(params = {}) {
+    const response = await apiBackend.get('admin/trajets/', { params })
+    return response.data
+  },
+
+  async annulerTrajet(id) {
+    const response = await apiBackend.post(`admin/trajets/${id}/annuler/`)
+    return response.data
+  },
+
+  // Réservations
+  async getReservations(params = {}) {
+    const response = await apiBackend.get('admin/reservations/', { params })
+    return response.data
+  },
+
+  // Avis
+  async getAvis(params = {}) {
+    const response = await apiBackend.get('admin/avis/', { params })
+    return response.data
+  },
+
+  async supprimerAvis(id) {
+    const response = await apiBackend.delete(`admin/avis/${id}/`)
+    return response.data
+  },
+}
+
 export default {
   backend: apiBackend,
   ia: apiIA,
@@ -385,4 +470,5 @@ export default {
   evaluations: serviceEvaluations,
   voitures: serviceVoitures,
   commissions: serviceCommissions,
+  admin: serviceAdmin,
 }

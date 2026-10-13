@@ -551,7 +551,7 @@ const retourAccueil = () => {
   background-color: #111625;
   color: #ffffff;
   border: none;
-  box-shadow: 0 2px 8px rgba(17, 22, 37, 0.04);
+  /* box-shadow: 0 2px 1px rgba(17, 22, 37, 0.04); */
 }
 
 .bouton-sombre:hover {

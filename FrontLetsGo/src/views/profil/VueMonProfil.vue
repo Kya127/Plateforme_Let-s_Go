@@ -6,13 +6,13 @@
         <button
           type="button"
           class="bouton-retour-nav"
-          aria-label="Retour à l'accueil"
+          :aria-label="estAdmin ? 'Retour à l\'administration' : 'Retour à l\'accueil'"
           @click="retourAccueil"
         >
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="15 18 9 12 15 6"></polyline>
           </svg>
-          <span>Accueil</span>
+          <span>{{ estAdmin ? 'Administration' : 'Accueil' }}</span>
         </button>
 
         <h1 class="titre-page-profil">Mon profil</h1>
@@ -62,7 +62,13 @@
                 <BadgeConducteurVerifie v-if="utilisateur.estConducteurVerifie" :taille="24" />
               </div>
               <span
-                v-if="!utilisateur.estConducteurVerifie"
+                v-if="estAdmin"
+                class="badge-statut-hero badge-admin"
+              >
+                Administrateur
+              </span>
+              <span
+                v-else-if="!utilisateur.estConducteurVerifie"
                 class="badge-statut-hero badge-passager"
               >
                 Passager
@@ -124,8 +130,8 @@
         </div>
       </section>
 
-      <!-- Invitation pour un passager simple sans dossier -->
-      <section v-else-if="!utilisateur.estConducteurVerifie && !dossierEnAttente" class="carte-invitation-conducteur">
+      <!-- Invitation pour un passager simple sans dossier (masquée pour admin) -->
+      <section v-else-if="!estAdmin && !utilisateur.estConducteurVerifie && !dossierEnAttente" class="carte-invitation-conducteur">
         <div class="contenu-invitation">
           <div class="texte-invitation">
             <h3 class="titre-invitation">Vous souhaitez proposer des trajets ?</h3>
@@ -495,9 +501,19 @@ const dossierEnAttente = computed(() => {
   return docStatus === 'PENDING' || docStatus === 'EN_ATTENTE'
 })
 
+// Détection du rôle Administrateur
+const estAdmin = computed(() => {
+  const role = (utilisateur.value?.role || storeAuth.utilisateur?.role || '').toUpperCase()
+  return role === 'ADMINISTRATEUR' || role === 'ADMIN' || storeAuth.estAdmin
+})
+
 // Navigation
 function retourAccueil() {
-  router.push('/accueil')
+  if (estAdmin.value) {
+    router.push('/admin')
+  } else {
+    router.push('/accueil')
+  }
 }
 
 function allerAModifierProfil() {
@@ -757,6 +773,12 @@ onMounted(async () => {
   background-color: #F1F5F9;
   color: #475569;
   border-color: #CBD5E1;
+}
+
+.badge-admin {
+  background-color: #111627;
+  color: #ffffff;
+  border-color: #111627;
 }
 
 .email-utilisateur-hero {

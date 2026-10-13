@@ -271,7 +271,7 @@ watch(() => [storeAuth.estConnecte, storeAuth.utilisateur?.estConducteurVerifie]
           />
         </div>
 
-        <!-- État vide propre sans données mockées -->
+       
         <div v-else class="carte-etat-vide-bdd">
           <div class="icone-vide-cercle">
             <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#FF4D2D" stroke-width="2.2">
