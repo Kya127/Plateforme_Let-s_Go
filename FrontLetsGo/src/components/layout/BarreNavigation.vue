@@ -39,6 +39,14 @@ const nomCompletAffiche = computed(() => {
   return `${prenom} ${nom}`.trim() || 'Utilisateur'
 })
 
+const roleAfficheMenu = computed(() => {
+  const u = props.utilisateur || {}
+  const role = (u.role || '').toLowerCase()
+  if (role === 'administrateur' || role === 'admin') return 'Administrateur'
+  if (u.estConducteurVerifie && role === 'conducteur') return 'Conducteur'
+  return 'Passager'
+})
+
 const emit = defineEmits(['deconnexion', 'proposer-trajet'])
 const router = useRouter()
 
@@ -205,10 +213,10 @@ onBeforeUnmount(() => {
                 <div class="infos-utilisateur-menu">
                   <div class="nom-menu-avec-badge">
                     <span class="nom-complet-menu">{{ nomCompletAffiche }}</span>
-                    <BadgeConducteurVerifie v-if="utilisateur.estConducteurVerifie" :taille="16" />
+                    <BadgeConducteurVerifie v-if="utilisateur.estConducteurVerifie && (utilisateur.role || '').toLowerCase() === 'conducteur'" :taille="16" />
                   </div>
-                  <span class="badge-role-menu" :class="{ 'role-conducteur': utilisateur.estConducteurVerifie }">
-                    {{ utilisateur.estConducteurVerifie ? 'Conducteur' : 'Passager' }}
+                  <span class="badge-role-menu" :class="{ 'role-conducteur': utilisateur.estConducteurVerifie && (utilisateur.role || '').toLowerCase() === 'conducteur' }">
+                    {{ roleAfficheMenu }}
                   </span>
                 </div>
               </div>

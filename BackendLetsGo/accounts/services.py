@@ -393,6 +393,8 @@ def verifier_et_authentifier_token_google(token_recu):
             raise ValueError("L'adresse e-mail n'a pas été fournie par Google.")
 
         # 3. Récupérer ou créer l'utilisateur dans MySQL
+        # Tout compte démarre STRICTEMENT avec le rôle PASSAGER et is_verified=False.
+        # Le statut conducteur vérifié nécessite obligatoirement la soumission et validation des pièces par un admin.
         user, created = User.objects.get_or_create(
             email=email,
             defaults={
@@ -401,7 +403,7 @@ def verifier_et_authentifier_token_google(token_recu):
                 'last_name': nom,
                 'telephone': None,
                 'role': User.Role.PASSAGER,
-                'is_verified': True,
+                'is_verified': False,
                 'is_active': True,
             }
         )
@@ -411,14 +413,11 @@ def verifier_et_authentifier_token_google(token_recu):
             user.set_unusable_password()
             user.save()
         else:
-            # S'il existait déjà mais n'était pas activé ou vérifié
+            # S'il existait déjà mais n'était pas activé
             champs_a_sauvegarder = []
             if not user.is_active:
                 user.is_active = True
                 champs_a_sauvegarder.append('is_active')
-            if not user.is_verified:
-                user.is_verified = True
-                champs_a_sauvegarder.append('is_verified')
             if not user.first_name and prenom:
                 user.first_name = prenom
                 champs_a_sauvegarder.append('first_name')

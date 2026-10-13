@@ -58,6 +58,10 @@ export const useAuthentificationStore = defineStore('authentification', () => {
     const prenom = (donnees.first_name || donnees.prenom || '').trim()
     const nom = (donnees.last_name || donnees.nom || '').trim()
     const nomComplet = `${prenom} ${nom}`.trim() || donnees.email || 'Utilisateur'
+    const roleNormalise = (donnees.role || 'passager').toLowerCase()
+    // Règle stricte : un utilisateur n'est conducteur vérifié que si son rôle est CONDUCTEUR ET validé par l'admin
+    const estVerifie = roleNormalise === 'conducteur' && Boolean(donnees.is_verified)
+
     utilisateur.value = {
       id: donnees.id,
       prenom,
@@ -69,7 +73,7 @@ export const useAuthentificationStore = defineStore('authentification', () => {
       photoUrl: donnees.photo || null,
       role: donnees.role || 'passager',
       note: donnees.note || 4.8,
-      estConducteurVerifie: donnees.is_verified || false,
+      estConducteurVerifie: estVerifie,
       documents: donnees.documents || null,
       voitures: donnees.voitures || [],
     }
@@ -111,6 +115,8 @@ export const useAuthentificationStore = defineStore('authentification', () => {
           if (!u.nomComplet || u.nomComplet === prenom) {
             u.nomComplet = `${prenom} ${nom}`.trim() || u.email || 'Utilisateur'
           }
+          const roleCache = (u.role || 'passager').toLowerCase()
+          u.estConducteurVerifie = roleCache === 'conducteur' && Boolean(u.estConducteurVerifie)
           utilisateur.value = u
           estConnecte.value = true
         }
