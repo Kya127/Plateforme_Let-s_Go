@@ -156,7 +156,7 @@
                 {{ user.date_inscription }}
               </td>
 
-              <!-- Actions : Détails & Suspendre -->
+              <!-- Actions : Détails, Changer rôle, Suspendre, Supprimer -->
               <td class="actions-cell">
                 <router-link
                   :to="`/admin/utilisateurs/${user.id}`"
@@ -169,6 +169,21 @@
                   </svg>
                 </router-link>
 
+                <!-- Bouton Changer de rôle -->
+                <button
+                  @click="ouvrirChangementRole(user)"
+                  class="btn-action-icon btn-action-role"
+                  :title="`Modifier le rôle (actuel: ${user.role})`"
+                  type="button"
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                    <circle cx="9" cy="7" r="4" />
+                    <polyline points="16 11 18 13 22 9" />
+                  </svg>
+                </button>
+
+                <!-- Bouton Suspendre / Réactiver -->
                 <button
                   v-if="user.id !== storeAuth.utilisateur?.id"
                   @click="ouvrirConfirmationSuspension(user)"
@@ -179,6 +194,22 @@
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <circle cx="12" cy="12" r="10" />
                     <line x1="4.93" y1="4.93" x2="19.07" y2="19.07" />
+                  </svg>
+                </button>
+
+                <!-- Bouton Supprimer l'utilisateur -->
+                <button
+                  v-if="user.id !== storeAuth.utilisateur?.id"
+                  @click="ouvrirConfirmationSuppression(user)"
+                  class="btn-action-icon btn-action-delete"
+                  title="Supprimer définitivement cet utilisateur"
+                  type="button"
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="3 6 5 6 21 6" />
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                    <line x1="10" y1="11" x2="10" y2="17" />
+                    <line x1="14" y1="11" x2="14" y2="17" />
                   </svg>
                 </button>
               </td>
@@ -258,6 +289,27 @@
       @close="modaleOuverte = false"
       @confirm="confirmerToggle"
     />
+
+    <!-- Modale de confirmation de suppression définitive -->
+    <ModaleConfirmationAdmin
+      :ouvert="modaleSuppressionOuverte"
+      titre="Supprimer définitivement cet utilisateur"
+      :message="`Voulez-vous vraiment supprimer définitivement le compte de ${userPourSuppression?.nom} (${userPourSuppression?.email}) ? Cette action est irréversible et annulera ses trajets et réservations associés.`"
+      boutonLabel="Supprimer définitivement"
+      :isDanger="true"
+      :chargement="chargementSuppression"
+      @close="modaleSuppressionOuverte = false"
+      @confirm="confirmerSuppression"
+    />
+
+    <!-- Modale de modification de rôle -->
+    <ModaleChangementRoleAdmin
+      :ouvert="modaleRoleOuverte"
+      :utilisateur="userPourRole"
+      :chargement="chargementRole"
+      @close="modaleRoleOuverte = false"
+      @confirm="confirmerChangementRole"
+    />
   </div>
 </template>
 
@@ -268,6 +320,7 @@ import { useAuthentificationStore } from '@/stores/authentification'
 import BadgeStatutAdmin from '@/components/admin/BadgeStatutAdmin.vue'
 import ModaleConfirmationAdmin from '@/components/admin/ModaleConfirmationAdmin.vue'
 import ModaleAjoutUtilisateurAdmin from '@/components/admin/ModaleAjoutUtilisateurAdmin.vue'
+import ModaleChangementRoleAdmin from '@/components/admin/ModaleChangementRoleAdmin.vue'
 import { serviceAdmin } from '@/services/api'
 
 const emit = defineEmits(['refresh-stats'])
@@ -289,6 +342,15 @@ const menuFiltreOuvert = ref(false)
 const modaleOuverte = ref(false)
 const userSelectionne = ref(null)
 const chargementAction = ref(false)
+
+// Modales Suppression & Modification de rôle
+const modaleSuppressionOuverte = ref(false)
+const userPourSuppression = ref(null)
+const chargementSuppression = ref(false)
+
+const modaleRoleOuverte = ref(false)
+const userPourRole = ref(null)
+const chargementRole = ref(false)
 
 const modaleAjoutOuverte = ref(false)
 const notificationSucces = ref('')
@@ -397,6 +459,53 @@ async function confirmerToggle() {
   }
 }
 
+function ouvrirConfirmationSuppression(user) {
+  userPourSuppression.value = user
+  modaleSuppressionOuverte.value = true
+}
+
+async function confirmerSuppression() {
+  if (!userPourSuppression.value) return
+  chargementSuppression.value = true
+  try {
+    const res = await serviceAdmin.supprimerUtilisateur(userPourSuppression.value.id)
+    notificationSucces.value = res?.message || 'Utilisateur supprimé avec succès.'
+    modaleSuppressionOuverte.value = false
+    chargerUtilisateurs(pageCourante.value)
+    emit('refresh-stats')
+    setTimeout(() => {
+      notificationSucces.value = ''
+    }, 4500)
+  } catch (e) {
+    console.error('Erreur suppression utilisateur:', e)
+  } finally {
+    chargementSuppression.value = false
+  }
+}
+
+function ouvrirChangementRole(user) {
+  userPourRole.value = user
+  modaleRoleOuverte.value = true
+}
+
+async function confirmerChangementRole({ id, role }) {
+  chargementRole.value = true
+  try {
+    const res = await serviceAdmin.modifierRoleUtilisateur(id, role)
+    notificationSucces.value = res?.message || `Le rôle a été changé en ${role}.`
+    modaleRoleOuverte.value = false
+    chargerUtilisateurs(pageCourante.value)
+    emit('refresh-stats')
+    setTimeout(() => {
+      notificationSucces.value = ''
+    }, 4500)
+  } catch (e) {
+    console.error('Erreur changement role:', e)
+  } finally {
+    chargementRole.value = false
+  }
+}
+
 function exporterCSV() {
   const headers = ['ID', 'Nom', 'Email', 'Téléphone', 'Rôle', 'Statut', 'Date Inscription']
   const rows = utilisateurs.value.map((u) => [
@@ -424,6 +533,12 @@ onMounted(() => {
   chargerUtilisateurs(1)
   if (route.query.action === 'nouveau') {
     ouvrirModaleAjout()
+  }
+  if (route.query.toast) {
+    notificationSucces.value = String(route.query.toast)
+    setTimeout(() => {
+      notificationSucces.value = ''
+    }, 4500)
   }
 })
 </script>
@@ -742,6 +857,16 @@ onMounted(() => {
 .btn-action-suspend:hover {
   background-color: #fef2f2;
   color: #ef4444;
+}
+
+.btn-action-role:hover {
+  background-color: #fff1ee;
+  color: #ff4d2d;
+}
+
+.btn-action-delete:hover {
+  background-color: #fee2e2;
+  color: #b91c1c;
 }
 
 .empty-state-cell {

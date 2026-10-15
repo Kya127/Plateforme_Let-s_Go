@@ -448,6 +448,90 @@ class AdminUserDetailView(APIView):
         })
 
 
+    def patch(self, request, pk):
+        """
+        Modification du rôle ou des informations de l'utilisateur par l'administrateur.
+        Permet notamment de basculer le rôle entre PASSAGER et CONDUCTEUR.
+        """
+        try:
+            u = User.objects.get(pk=pk)
+        except User.DoesNotExist:
+            return Response({'detail': 'Utilisateur introuvable.'}, status=status.HTTP_404_NOT_FOUND)
+
+        if u.role == User.Role.ADMINISTRATEUR or u.is_superuser:
+            return Response(
+                {'detail': "Action non autorisée : impossible de modifier le rôle d'un compte administrateur."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        nouveau_role = request.data.get('role', '').strip().upper()
+        if not nouveau_role:
+            return Response({'detail': "Le champ 'role' est obligatoire."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if nouveau_role not in [User.Role.PASSAGER, User.Role.CONDUCTEUR]:
+            return Response({'detail': "Le rôle doit être soit PASSAGER soit CONDUCTEUR."}, status=status.HTTP_400_BAD_REQUEST)
+
+        u.role = nouveau_role
+        champs_maj = ['role']
+
+        if nouveau_role == User.Role.CONDUCTEUR:
+            u.is_verified = True
+            champs_maj.append('is_verified')
+        else:
+            u.is_verified = False
+            champs_maj.append('is_verified')
+
+        u.save(update_fields=champs_maj)
+
+        nom_complet = f"{u.first_name} {u.last_name}".strip() or u.email
+        return Response({
+            'succes': True,
+            'message': f"Le rôle de {nom_complet} a été modifié en {nouveau_role} avec succès.",
+            'user': {
+                'id': u.id,
+                'role': u.role,
+                'is_verified': u.is_verified,
+            }
+        })
+
+    def delete(self, request, pk):
+        """
+        Suppression définitive d'un utilisateur par l'administrateur.
+        """
+        try:
+            u = User.objects.get(pk=pk)
+        except User.DoesNotExist:
+            return Response({'detail': 'Utilisateur introuvable.'}, status=status.HTTP_404_NOT_FOUND)
+
+        if u.id == request.user.id:
+            return Response(
+                {'detail': "Action impossible : vous ne pouvez pas supprimer votre propre compte administrateur."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if u.role == User.Role.ADMINISTRATEUR or u.is_superuser:
+            return Response(
+                {'detail': "Action impossible : la suppression d'un compte administrateur est interdite."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        nom_complet = f"{u.first_name} {u.last_name}".strip() or u.email
+
+        # Annuler les trajets à venir de ce conducteur pour libérer les passagers
+        Trajet.objects.filter(
+            conducteur=u, 
+            statut__in=[Trajet.StatutTrajet.PLANIFIE, Trajet.StatutTrajet.EN_COURS]
+        ).update(statut=Trajet.StatutTrajet.ANNULE)
+
+        # Suppression définitive de l'utilisateur
+        u.delete()
+
+        return Response({
+            'succes': True,
+            'message': f"Le compte de {nom_complet} a été supprimé définitivement de la plateforme."
+        }, status=status.HTTP_200_OK)
+
+
 class AdminUserToggleStatusView(APIView):
     permission_classes = [IsAdminOrStaffPermission]
 
@@ -466,6 +550,13 @@ class AdminUserToggleStatusView(APIView):
         # Inverser le statut
         u.is_active = not u.is_active
         u.save(update_fields=['is_active'])
+
+        # Si le compte vient d'être suspendu, annuler ses trajets futurs planifiés
+        if not u.is_active:
+            Trajet.objects.filter(
+                conducteur=u,
+                statut=Trajet.StatutTrajet.PLANIFIE
+            ).update(statut=Trajet.StatutTrajet.ANNULE)
 
         statut_txt = 'activé' if u.is_active else 'suspendu'
         return Response({

@@ -72,6 +72,8 @@ LOCALITES = [
     {"nom": "Maristes", "aliases": ["maristes", "les maristes", "hann"]},
     {"nom": "Médina", "aliases": ["medina", "la medina"]},
     {"nom": "Fann", "aliases": ["fann", "fann residence", "point e", "mermoz"]},
+    {"nom": "Hlm5", "aliases": ["Hlm", "Hlm3", "Hlm4", "marché Hlm"]},
+    
 
 ]
 

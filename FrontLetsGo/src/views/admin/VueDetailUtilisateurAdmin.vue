@@ -27,8 +27,11 @@
           />
           <h2 class="profile-user-name">{{ utilisateur.nom }}</h2>
           <span class="profile-user-email">{{ utilisateur.email }}</span>
-          <div class="profile-status-pill" :class="utilisateur.is_active ? 'pill-actif' : 'pill-suspendu'">
-            {{ utilisateur.is_active ? 'ACTIF' : 'SUSPENDU' }}
+          <div class="profile-badges-row">
+            <BadgeStatutAdmin :statut="utilisateur.role" variant="pill" />
+            <div class="profile-status-pill" :class="utilisateur.is_active ? 'pill-actif' : 'pill-suspendu'">
+              {{ utilisateur.is_active ? 'ACTIF' : 'SUSPENDU' }}
+            </div>
           </div>
         </div>
 
@@ -74,6 +77,22 @@
             <span>Envoyer un message</span>
           </a>
 
+          <!-- Modifier le rôle de l'utilisateur -->
+          <button
+            @click="modaleRoleOuverte = true"
+            class="btn-modify-role"
+            type="button"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+              <circle cx="8.5" cy="7" r="4" />
+              <line x1="20" y1="8" x2="20" y2="14" />
+              <line x1="23" y1="11" x2="17" y2="11" />
+            </svg>
+            <span>Modifier le rôle</span>
+          </button>
+
+          <!-- Suspendre / Réactiver le compte -->
           <button
             @click="modaleSuspensionOuverte = true"
             class="btn-suspend-account"
@@ -85,6 +104,22 @@
               <line x1="4.93" y1="4.93" x2="19.07" y2="19.07" />
             </svg>
             <span>{{ utilisateur.is_active ? 'Suspendre le compte' : 'Réactiver le compte' }}</span>
+          </button>
+
+          <!-- Supprimer définitivement le compte -->
+          <button
+            v-if="utilisateur.id !== storeAuth.utilisateur?.id"
+            @click="modaleSuppressionOuverte = true"
+            class="btn-delete-account"
+            type="button"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="3 6 5 6 21 6" />
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+              <line x1="10" y1="11" x2="10" y2="17" />
+              <line x1="14" y1="11" x2="14" y2="17" />
+            </svg>
+            <span>Supprimer le compte</span>
           </button>
         </div>
       </aside>
@@ -172,6 +207,15 @@
       <router-link to="/admin/utilisateurs" class="btn-retour">Retour à la liste</router-link>
     </div>
 
+    <!-- Toast notification de succès -->
+    <div v-if="notificationSucces" class="toast-succes">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+        <polyline points="22 4 12 14.01 9 11.01" />
+      </svg>
+      <span>{{ notificationSucces }}</span>
+    </div>
+
     <!-- Modale de suspension -->
     <ModaleConfirmationAdmin
       :ouvert="modaleSuspensionOuverte"
@@ -183,22 +227,56 @@
       @close="modaleSuspensionOuverte = false"
       @confirm="confirmerToggleStatut"
     />
+
+    <!-- Modale de modification de rôle -->
+    <ModaleChangementRoleAdmin
+      :ouvert="modaleRoleOuverte"
+      :utilisateur="utilisateur"
+      :chargement="chargementRole"
+      @close="modaleRoleOuverte = false"
+      @confirm="confirmerChangementRole"
+    />
+
+    <!-- Modale de suppression définitive -->
+    <ModaleConfirmationAdmin
+      :ouvert="modaleSuppressionOuverte"
+      titre="Supprimer définitivement cet utilisateur"
+      :message="`Voulez-vous vraiment supprimer définitivement le compte de ${utilisateur?.nom} (${utilisateur?.email}) ? Cette action est irréversible et annulera ses trajets et réservations associés.`"
+      boutonLabel="Supprimer définitivement"
+      :isDanger="true"
+      :chargement="chargementSuppression"
+      @close="modaleSuppressionOuverte = false"
+      @confirm="confirmerSuppression"
+    />
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
+import { useAuthentificationStore } from '@/stores/authentification'
 import BadgeStatutAdmin from '@/components/admin/BadgeStatutAdmin.vue'
 import ModaleConfirmationAdmin from '@/components/admin/ModaleConfirmationAdmin.vue'
+import ModaleChangementRoleAdmin from '@/components/admin/ModaleChangementRoleAdmin.vue'
 import { serviceAdmin } from '@/services/api'
 
 const route = useRoute()
+const router = useRouter()
+const storeAuth = useAuthentificationStore()
+
 const utilisateur = ref(null)
 const chargement = ref(true)
 
 const modaleSuspensionOuverte = ref(false)
 const chargementAction = ref(false)
+
+const modaleRoleOuverte = ref(false)
+const chargementRole = ref(false)
+
+const modaleSuppressionOuverte = ref(false)
+const chargementSuppression = ref(false)
+
+const notificationSucces = ref('')
 
 async function chargerDetail() {
   chargement.value = true
@@ -226,10 +304,51 @@ async function confirmerToggleStatut() {
     utilisateur.value.is_active = res.is_active
     utilisateur.value.statut = res.statut
     modaleSuspensionOuverte.value = false
+    notificationSucces.value = res.is_active ? 'Compte réactivé avec succès.' : 'Compte suspendu avec succès.'
+    setTimeout(() => {
+      notificationSucces.value = ''
+    }, 4500)
   } catch (e) {
     console.error('Erreur toggle statut:', e)
   } finally {
     chargementAction.value = false
+  }
+}
+
+async function confirmerChangementRole({ id, role }) {
+  chargementRole.value = true
+  try {
+    const res = await serviceAdmin.modifierRoleUtilisateur(id, role)
+    if (utilisateur.value) {
+      utilisateur.value.role = role
+      utilisateur.value.is_verified = (role === 'CONDUCTEUR')
+    }
+    notificationSucces.value = res?.message || `Le rôle a été changé en ${role}.`
+    modaleRoleOuverte.value = false
+    setTimeout(() => {
+      notificationSucces.value = ''
+    }, 4500)
+  } catch (e) {
+    console.error('Erreur modification rôle:', e)
+  } finally {
+    chargementRole.value = false
+  }
+}
+
+async function confirmerSuppression() {
+  if (!utilisateur.value) return
+  chargementSuppression.value = true
+  try {
+    await serviceAdmin.supprimerUtilisateur(utilisateur.value.id)
+    modaleSuppressionOuverte.value = false
+    router.push({
+      path: '/admin/utilisateurs',
+      query: { toast: `Le compte de ${utilisateur.value.nom} a été supprimé avec succès.` }
+    })
+  } catch (e) {
+    console.error('Erreur suppression utilisateur:', e)
+  } finally {
+    chargementSuppression.value = false
   }
 }
 
@@ -326,6 +445,14 @@ onMounted(() => {
   margin-bottom: 12px;
 }
 
+.profile-badges-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .profile-status-pill {
   font-size: 11px;
   font-weight: 700;
@@ -412,6 +539,34 @@ onMounted(() => {
   transform: translateY(-1px);
 }
 
+.btn-modify-role {
+  background-color: #f8fafc;
+  color: #334155;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 12px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all 0.15s ease;
+}
+
+.btn-modify-role svg {
+  width: 16px;
+  height: 16px;
+  color: #6366f1;
+}
+
+.btn-modify-role:hover {
+  background-color: #f1f5f9;
+  color: #1e293b;
+  border-color: #cbd5e1;
+}
+
 .btn-suspend-account {
   background-color: #fff0ed;
   color: #ef4444;
@@ -444,6 +599,61 @@ onMounted(() => {
 
 .btn-suspend-account.btn-reactivate:hover {
   background-color: #d1fae5;
+}
+
+.btn-delete-account {
+  background-color: transparent;
+  color: #dc2626;
+  border: 1px dashed #fca5a5;
+  border-radius: 12px;
+  padding: 11px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all 0.15s ease;
+}
+
+.btn-delete-account svg {
+  width: 16px;
+  height: 16px;
+}
+
+.btn-delete-account:hover {
+  background-color: #fef2f2;
+  border-color: #ef4444;
+}
+
+.toast-succes {
+  position: fixed;
+  bottom: 28px;
+  right: 28px;
+  background-color: #111627;
+  color: #ffffff;
+  padding: 12px 20px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  z-index: 1000;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
+  animation: slideUp 0.25s ease;
+}
+
+.toast-succes svg {
+  width: 18px;
+  height: 18px;
+  color: #10b981;
+}
+
+@keyframes slideUp {
+  from { transform: translateY(10px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
 }
 
 /* Colonne Droite */

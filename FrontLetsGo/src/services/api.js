@@ -405,6 +405,16 @@ export const serviceAdmin = {
     return response.data
   },
 
+  async modifierRoleUtilisateur(id, role) {
+    const response = await apiBackend.patch(`admin/utilisateurs/${id}/`, { role })
+    return response.data
+  },
+
+  async supprimerUtilisateur(id) {
+    const response = await apiBackend.delete(`admin/utilisateurs/${id}/`)
+    return response.data
+  },
+
   // Demandes de Conducteurs & Vérification
   async getDemandes(params = {}) {
     const response = await apiBackend.get('admin/demandes/', { params })
