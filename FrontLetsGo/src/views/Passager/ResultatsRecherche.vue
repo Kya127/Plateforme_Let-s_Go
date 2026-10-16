@@ -92,7 +92,7 @@
 <script setup>
 import { computed, ref, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { serviceTrajets } from '@/services/api'
+import { serviceTrajets, serviceRecommandations } from '@/services/api'
 import CarteResultatTrajet from '@/components/passager/CarteResultatTrajet.vue'
 import EtatAucunTrajet from '@/components/common/EtatAucunTrajet.vue'
 
@@ -194,6 +194,11 @@ async function chargerResultats() {
     if (destination.value) filtres.destination = destination.value
     if (searchedDate.value) filtres.date = searchedDate.value
     if (passengerCount.value > 1) filtres.passagers = passengerCount.value
+
+    // Enregistrement discret de la recherche pour enrichir les suggestions dynamiques
+    if (departure.value && destination.value) {
+      serviceRecommandations.enregistrerRecherche(departure.value, destination.value, searchedDate.value)
+    }
 
     const data = await serviceTrajets.lister(filtres)
     const liste = Array.isArray(data) ? data : data.results || []

@@ -2,7 +2,7 @@
 import { reactive, ref, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthentificationStore } from '@/stores/authentification'
-import { serviceTrajets, serviceReservations } from '@/services/api'
+import { serviceTrajets, serviceReservations, serviceRecommandations } from '@/services/api'
 import BarreNavigation from '@/components/layout/BarreNavigation.vue'
 import RechercheUnifieeDesktop from '@/components/accueil/RechercheUnifieeDesktop.vue'
 import CarteRechercheMobile from '@/components/accueil/CarteRechercheMobile.vue'
@@ -18,6 +18,35 @@ const storeAuth = useAuthentificationStore()
    DATE D'AUJOURD'HUI (YYYY-MM-DD)
 ========================================================= */
 const aujourdhui = new Date().toISOString().split('T')[0]
+
+/* =========================================================
+   SUGGESTIONS DYNAMIQUES DE TRAJETS (HABITUDES / POPULAIRES)
+========================================================= */
+const suggestionsTrajets = ref([])
+const metaSuggestions = ref({
+  type_suggestion: 'POPULAIRES',
+  tag: 'Trajets populaires du moment',
+  description: ''
+})
+const chargementSuggestions = ref(false)
+
+async function chargerSuggestions() {
+  chargementSuggestions.value = true
+  try {
+    const data = await serviceRecommandations.getSuggestions()
+    suggestionsTrajets.value = data.suggestions || []
+    metaSuggestions.value = {
+      type_suggestion: data.type_suggestion || 'POPULAIRES',
+      tag: data.tag || 'Trajets populaires du moment',
+      description: data.description || ''
+    }
+  } catch (err) {
+    console.warn('Erreur chargement des suggestions dynamiques:', err)
+    suggestionsTrajets.value = []
+  } finally {
+    chargementSuggestions.value = false
+  }
+}
 
 /* =========================================================
    TRAJETS DISPONIBLES (BDD)
@@ -113,6 +142,7 @@ async function gererDeconnexion() {
   await storeAuth.deconnecter()
   reservationActive.value = null
   await chargerTrajetsDisponibles()
+  await chargerSuggestions()
 }
 
 /* =========================================================
@@ -127,6 +157,7 @@ function lancerRechercheUnifiee() {
   const lieu = rechercheUnifiee.lieu?.trim()
   if (lieu) {
     query.q = lieu
+    serviceRecommandations.enregistrerRecherche('Dakar', lieu)
   }
   routeur.push({
     path: '/recherche-resultats',
@@ -154,6 +185,11 @@ function lancerRecherche() {
   }
   if (formulaireRecherche.passagers && formulaireRecherche.passagers > 1) {
     query.passagers = String(formulaireRecherche.passagers)
+  }
+
+  // Historisation discrète pour le matching de suggestions
+  if (query.depart && query.destination) {
+    serviceRecommandations.enregistrerRecherche(query.depart, query.destination, query.date)
   }
 
   routeur.push({
@@ -196,11 +232,13 @@ function naviguerVersPublicationConducteur() {
 ========================================================= */
 onMounted(() => {
   chargerTrajetsDisponibles()
+  chargerSuggestions()
   chargerReservationActive()
 })
 
 watch(() => [storeAuth.estConnecte, storeAuth.utilisateur?.estConducteurVerifie], () => {
   chargerReservationActive()
+  chargerSuggestions()
 })
 </script>
 
@@ -233,6 +271,88 @@ watch(() => [storeAuth.estConnecte, storeAuth.utilisateur?.estConducteurVerifie]
         @rechercher="lancerRecherche"
         @recherche-vocale="lancerRechercheVocale"
       />
+
+      <!-- =========================================================
+           SECTION : SUGGESTIONS POUR VOUS / VOS LIGNES HABITUELLES
+           (Affichée en haut du mur d'accueil au chargement)
+      ========================================================== -->
+      <section
+        v-if="suggestionsTrajets.length > 0"
+        id="section-suggestions"
+        class="section-trajets-populaires section-suggestions-dynamiques"
+      >
+        <div class="entete-section">
+          <div class="titre-avec-puce">
+            <span class="puce-orange"></span>
+            <h3 class="titre-section">
+              {{ metaSuggestions.type_suggestion === 'HABITUDES' ? 'VOS LIGNES HABITUELLES' : 'SUGGESTIONS POUR VOUS' }}
+            </h3>
+          </div>
+
+          <!-- Tag / Indicateur contextuel -->
+          <!-- <div
+            class="badge-tag-suggestion"
+            :class="{
+              'badge-tag--habitudes': metaSuggestions.type_suggestion === 'HABITUDES',
+              'badge-tag--populaires': metaSuggestions.type_suggestion === 'POPULAIRES'
+            }"
+          >
+             Icône Horloge pour Habitudes 
+            <svg
+              v-if="metaSuggestions.type_suggestion === 'HABITUDES'"
+              viewBox="0 0 24 24"
+              width="13"
+              height="13"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <circle cx="12" cy="12" r="10" />
+              <polyline points="12 6 12 12 16 14" />
+            </svg>
+
+             Icône Éclair pour Populaires 
+            <svg
+              v-else
+              viewBox="0 0 24 24"
+              width="13"
+              height="13"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+            </svg>
+
+            <span>{{ metaSuggestions.tag }}</span>
+          </div>-->
+        </div> 
+
+        <!-- Grille des trajets suggérés -->
+        <div class="grille-trajets">
+          <CarteTrajet
+            v-for="t in suggestionsTrajets"
+            :key="'sugg-' + t.id"
+            :depart-ville="extraireVille(t.lieu_depart)"
+            :depart-lieu="t.lieu_depart"
+            :depart-heure="t.heure_depart?.substring(0, 5)"
+            :arrivee-ville="extraireVille(t.destination)"
+            :arrivee-lieu="t.destination"
+            :arrivee-heure="calculerHeureArrivee(t.heure_depart)"
+            :prix="`${Number(t.prix_par_place).toLocaleString('fr-FR')} FCFA`"
+            :statut="t.places_disponibles > 0 ? 'DISPONIBLE' : 'COMPLET'"
+            :conducteur-nom="t.conducteur_nom || 'Conducteur Let\'s Go'"
+            :conducteur-note="t.conducteur_note || 4.9"
+            :conducteur-photo="t.conducteur_photo || ''"
+            :est-reserve="estTrajetReserve(t)"
+            @reserver="naviguerVersDetailTrajet(t)"
+          />
+        </div>
+      </section>
 
       <!-- SECTION TRAJETS DISPONIBLES (Données réelles issues de la base de données Django) -->
       <section id="trajets-populaires" class="section-trajets-populaires">
@@ -426,6 +546,31 @@ watch(() => [storeAuth.estConnecte, storeAuth.utilisateur?.estConducteurVerifie]
   letter-spacing: 0.8px;
   text-transform: uppercase;
   margin: 0;
+}
+
+/* BADGE CONTEXTUEL DE SUGGESTION */
+.badge-tag-suggestion {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+}
+
+.badge-tag--habitudes {
+  background-color: #fff2ee;
+  color: #ff4d2d;
+  border: 1px solid rgba(255, 77, 45, 0.2);
+}
+
+.badge-tag--populaires {
+  background-color: #eef2ff;
+  color: #4f46e5;
+  border: 1px solid rgba(79, 70, 229, 0.2);
 }
 
 .lien-voir-tout-conducteur {

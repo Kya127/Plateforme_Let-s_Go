@@ -471,6 +471,31 @@ export const serviceAdmin = {
   },
 }
 
+// 9. Recommandations & Suggestions Dynamiques
+export const serviceRecommandations = {
+  // Obtenir les suggestions pour l'écran d'accueil (habitudes ou populaires)
+  async getSuggestions() {
+    const response = await apiBackend.get('recommandations/suggestions/')
+    return response.data
+  },
+
+  // Enregistrer discrètement une recherche pour enrichir les habitudes
+  async enregistrerRecherche(depart, destination, date = null) {
+    if (!depart || !destination) return null
+    try {
+      const response = await apiBackend.post('recommandations/recherches/', {
+        lieu_depart: depart,
+        destination: destination,
+        date_voulue: date || null,
+      })
+      return response.data
+    } catch (err) {
+      console.warn('Historisation recherche non bloquante:', err)
+      return null
+    }
+  },
+}
+
 export default {
   backend: apiBackend,
   ia: apiIA,
@@ -481,4 +506,5 @@ export default {
   voitures: serviceVoitures,
   commissions: serviceCommissions,
   admin: serviceAdmin,
+  recommandations: serviceRecommandations,
 }
