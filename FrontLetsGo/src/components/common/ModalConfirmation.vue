@@ -109,7 +109,7 @@ defineEmits(['confirmer', 'annuler', 'fermer'])
   inset: 0;
   background-color: rgba(17, 22, 39, 0.55);
   backdrop-filter: blur(4px);
-  z-index: 1000;
+  z-index: 20000;
   display: flex;
   align-items: center;
   justify-content: center;

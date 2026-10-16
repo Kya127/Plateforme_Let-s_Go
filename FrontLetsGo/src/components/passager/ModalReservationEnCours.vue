@@ -164,7 +164,7 @@
             <button
               type="button"
               class="bouton-annuler"
-              @click="annulerReservation"
+              @click="ouvrirConfirmationAnnulation"
             >
               <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                 <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -177,6 +177,20 @@
       </div>
     </Teleport>
 
+    <!-- Modale de confirmation d'annulation personnalisée -->
+    <ModalConfirmation
+      :visible="afficherModalConfirmation"
+      titre="Annuler votre réservation ?"
+      message="Êtes-vous sûr de vouloir annuler cette réservation ? Vos places seront libérées et le conducteur sera prévenu."
+      texte-confirmer="Oui, annuler"
+      texte-annuler="Non, conserver"
+      type="danger"
+      :en-chargement="estEnCoursAnnulation"
+      @confirmer="confirmerAnnulation"
+      @annuler="afficherModalConfirmation = false"
+      @fermer="afficherModalConfirmation = false"
+    />
+
   </div>
 </template>
 
@@ -184,6 +198,7 @@
 import { ref, computed } from 'vue'
 import { serviceReservations } from '@/services/api'
 import { getAvatarUrl } from '@/utils/avatar'
+import ModalConfirmation from '@/components/common/ModalConfirmation.vue'
 
 const props = defineProps({
   reservationData: {
@@ -195,6 +210,7 @@ const props = defineProps({
 const emit = defineEmits(['annule'])
 
 const modalOuvert = ref(false)
+const afficherModalConfirmation = ref(false)
 
 const estVisible = computed(() => {
   return !!props.reservationData && !!props.reservationData.id
@@ -248,20 +264,23 @@ const contacterConducteur = () => {
 
 const estEnCoursAnnulation = ref(false)
 
-const annulerReservation = async () => {
+const ouvrirConfirmationAnnulation = () => {
   if (!reservation.value?.id || estEnCoursAnnulation.value) return
-  if (confirm('Êtes-vous sûr de vouloir annuler cette réservation ? Vos places seront libérées.')) {
-    estEnCoursAnnulation.value = true
-    try {
-      await serviceReservations.annuler(reservation.value.id)
-      modalOuvert.value = false
-      emit('annule', reservation.value.id)
-    } catch (err) {
-      console.error('Erreur lors de l’annulation de la réservation:', err)
-      alert('Impossible d’annuler la réservation pour le moment.')
-    } finally {
-      estEnCoursAnnulation.value = false
-    }
+  afficherModalConfirmation.value = true
+}
+
+const confirmerAnnulation = async () => {
+  if (!reservation.value?.id || estEnCoursAnnulation.value) return
+  estEnCoursAnnulation.value = true
+  try {
+    await serviceReservations.annuler(reservation.value.id)
+    afficherModalConfirmation.value = false
+    modalOuvert.value = false
+    emit('annule', reservation.value.id)
+  } catch (err) {
+    console.error('Erreur lors de l’annulation de la réservation:', err)
+  } finally {
+    estEnCoursAnnulation.value = false
   }
 }
 

@@ -93,16 +93,6 @@
           <span></span>
         </div>
 
-        <!-- pilule d'analyse IA -->
-        <div
-          v-if="isAnalyzing"
-          class="analyzing-pill"
-          aria-live="polite"
-        >
-          <span class="analyzing-spinner"></span>
-          <span>Analyse du trajet en cours...</span>
-        </div>
-
       </section>
 
 
@@ -143,12 +133,12 @@
         <EtatAucunTrajet
           v-if="noResultDetected"
           class="voice-empty-state"
-          titre="Aucun trajet disponible"
+          :titre="recognitionError ? 'Échec de l\'analyse vocale' : 'Aucun trajet disponible'"
           :description="noResultDescription"
           bouton-texte="Réessayer au micro"
           :afficher-secondaire="true"
           secondaire-bouton-texte="Modifier ma recherche"
-          @action="startListening"
+          @action="reessayerAuMicro"
           @action-secondaire="allerRechercheManuelle"
         />
       </Transition>
@@ -408,9 +398,10 @@
           type="button"
           class="search-button"
           :class="{
-            'search-button--enabled': canSearch
+            'search-button--enabled': canSearch || isSearching || isAnalyzing,
+            'search-button--loading': isSearching || isAnalyzing
           }"
-          :disabled="!canSearch || isSearching || isAnalyzing"
+          :disabled="(!canSearch && !isSearching && !isAnalyzing) || isListening"
           @click="searchTrips"
         >
 
@@ -438,7 +429,7 @@
             <span class="spinner"></span>
 
             <span>
-              {{ isAnalyzing ? 'Analyse en cours...' : 'Recherche...' }}
+              Recherche en cours...
             </span>
           </span>
 
@@ -560,6 +551,9 @@ const canSearch = computed(() => {
  * Description textuelle pour l'état aucun résultat
  */
 const noResultDescription = computed(() => {
+  if (recognitionError.value) {
+    return recognitionError.value
+  }
   if (criteria.departure && criteria.destination) {
     return `Aucun trajet ne correspond actuellement à votre recherche entre ${criteria.departure} et ${criteria.destination}.`
   }
@@ -571,8 +565,7 @@ const noResultDescription = computed(() => {
  * Texte dynamique du bouton d'action principal
  */
 const buttonText = computed(() => {
-  if (isSearching.value) return 'Recherche en cours...'
-  if (isAnalyzing.value) return 'Analyse en cours...'
+  if (isSearching.value || isAnalyzing.value) return 'Recherche en cours...'
   if (isListening.value) return 'Écoute en cours...'
 
   if (hasDetectedCriteria.value) {
@@ -646,302 +639,108 @@ const resetCriteria = () => {
 
 
 /* =========================================================
-   APPEL DU SERVICE IA (FASTAPI MICROSERVICE OPTION 2)
+   NOUVELLE LOGIQUE : MEDIARECORDER + GEMINI 2.0 FLASH MULTILINGUE
 ========================================================= */
 
-const sendTranscriptToAI = async (text) => {
-  if (!text) return null
+let mediaRecorder = null
+let audioChunks = []
+let audioStream = null
 
-  // 1. Tenter l'appel au microservice IA (FastAPI sur http://127.0.0.1:8001/)
+const startRecording = async () => {
+  noResultDetected.value = false
+  tripsFoundCount.value = null
+  isAnalyzing.value = false
+  recognitionError.value = ''
+  transcript.value = ''
+  resetCriteria()
+
   try {
-    const aiData = await serviceIA.extraireCriteres(text)
-    if (aiData && (aiData.departure || aiData.destination || aiData.depart || aiData.arrivee)) {
-      return {
-        departure: aiData.departure || aiData.depart || '',
-        destination: aiData.destination || aiData.arrivee || '',
-        date: aiData.date || '',
-        time: aiData.time || aiData.heure || ''
+    audioChunks = []
+    audioStream = await navigator.mediaDevices.getUserMedia({ audio: true })
+
+    let options = {}
+    if (typeof MediaRecorder !== 'undefined') {
+      if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+        options = { mimeType: 'audio/webm;codecs=opus' }
+      } else if (MediaRecorder.isTypeSupported('audio/webm')) {
+        options = { mimeType: 'audio/webm' }
+      } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+        options = { mimeType: 'audio/mp4' }
       }
     }
+
+    mediaRecorder = new MediaRecorder(audioStream, options)
+
+    mediaRecorder.ondataavailable = (event) => {
+      if (event.data && event.data.size > 0) {
+        audioChunks.push(event.data)
+      }
+    }
+
+    mediaRecorder.onstop = async () => {
+      const mimeType = mediaRecorder.mimeType || 'audio/webm'
+      const audioBlob = new Blob(audioChunks, { type: mimeType })
+
+      // Libérer immédiatement les pistes audio du microphone
+      if (audioStream) {
+        audioStream.getTracks().forEach((track) => track.stop())
+        audioStream = null
+      }
+
+      // Envoi du flux audio brut au microservice IA propulsé par Gemini 2.0 Flash
+      await traiterAudioAvecGemini(audioBlob)
+    }
+
+    mediaRecorder.start()
+    isListening.value = true
   } catch (err) {
-    console.warn('Microservice IA non disponible ou erreur, bascule sur l’analyse locale robuste:', err)
-  }
-
-  // 2. Repli sémantique robuste si le microservice est hors ligne
-  const clean = text.toLowerCase()
-  let dep = ''
-  let dest = ''
-  let dt = ''
-  let tm = ''
-
-  // Villes et quartiers majeurs
-  const villes = [
-    { label: 'Keur Massar', patterns: ['keur massar', 'keur-massar'] },
-    { label: 'Sacré-Cœur', patterns: ['sacre coeur', 'sacre-coeur', 'sacre', 'sacre coeur 3', 'scat urbam'] },
-    { label: 'Dakar', patterns: ['dakar'] },
-    { label: 'Thiès', patterns: ['thies', 'thiès'] },
-    { label: 'Saint-Louis', patterns: ['saint-louis', 'saint louis', 'ndar'] },
-    { label: 'Mbour', patterns: ['mbour', 'saly', 'somone'] },
-    { label: 'Touba', patterns: ['touba', 'mbacke'] },
-    { label: 'Kaolack', patterns: ['kaolack'] },
-    { label: 'Rufisque', patterns: ['rufisque', 'bargny'] },
-    { label: 'Ouakam', patterns: ['ouakam', 'mamelles'] },
-    { label: 'Almadies', patterns: ['almadies', 'ngor'] },
-    { label: 'Plateau', patterns: ['plateau'] },
-    { label: 'Parcelles Assainies', patterns: ['parcelles assainies', 'parcelles'] },
-    { label: 'Yoff', patterns: ['yoff'] },
-    { label: 'Guédiawaye', patterns: ['guediawaye', 'guédiawaye'] },
-    { label: 'Pikine', patterns: ['pikine'] },
-    { label: 'Diamniadio', patterns: ['diamniadio'] },
-    { label: 'Aéroport AIBD', patterns: ['aeroport aibd', 'aibd'] }
-  ]
-
-  // Détection avec tiret : "Keur Massar - Sacré coeur"
-  const matchTiret = clean.match(/([a-zà-ÿ\s]+?)\s*[-–—]\s*([a-zà-ÿ\s]+)/i)
-  if (matchTiret) {
-    const dCandidate = matchTiret[1].trim()
-    const aCandidate = matchTiret[2].trim()
-    for (const v of villes) {
-      if (v.patterns.some(p => dCandidate.includes(p))) dep = v.label
-      if (v.patterns.some(p => aCandidate.includes(p))) dest = v.label
+    console.error('Erreur accès microphone:', err)
+    isListening.value = false
+    if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+      recognitionError.value =
+        "L'accès au microphone a été refusé. Veuillez l'autoriser dans votre navigateur."
+    } else {
+      recognitionError.value = "Impossible d'accéder au microphone de cet appareil."
     }
-  }
-
-  // Détection explicite "de [X] à [Y]"
-  if (!dep || !dest) {
-    const matchDeA = clean.match(/(?:de|depuis)\s+([a-zà-ÿ\s\-]+?)\s+(?:à|a|vers|pour|direction)\s+([a-zà-ÿ\s\-]+)/i)
-    if (matchDeA) {
-      const dCandidate = matchDeA[1].trim()
-      const aCandidate = matchDeA[2].trim()
-      for (const v of villes) {
-        if (v.patterns.some(p => dCandidate.includes(p))) dep = v.label
-        if (v.patterns.some(p => aCandidate.includes(p))) dest = v.label
-      }
-    }
-  }
-
-  // Si pas encore extrait, recherche globale ordonnée
-  if (!dep || !dest) {
-    const trouvées = []
-    for (const v of villes) {
-      for (const p of v.patterns) {
-        const idx = clean.indexOf(p)
-        if (idx !== -1) {
-          trouvées.push({ idx, label: v.label })
-          break
-        }
-      }
-    }
-    trouvées.sort((a, b) => a.idx - b.idx)
-    const unique = [...new Set(trouvées.map(t => t.label))]
-    if (unique.length >= 2) {
-      if (!dep) dep = unique[0]
-      if (!dest) dest = unique[1]
-    } else if (unique.length === 1) {
-      if (clean.includes('de ' + unique[0].toLowerCase())) {
-        if (!dep) dep = unique[0]
-      } else {
-        if (!dest) dest = unique[0]
-      }
-    }
-  }
-
-  // Dates
-  if (clean.includes('demain')) {
-    const d = new Date()
-    d.setDate(d.getDate() + 1)
-    dt = d.toISOString().split('T')[0]
-  } else if (clean.includes("aujourd'hui") || clean.includes("aujourdhui") || clean.includes("ce jour")) {
-    dt = new Date().toISOString().split('T')[0]
-  }
-
-  // Heures
-  const matchH = clean.match(/(\d{1,2})\s*(?:h|:|heure)\s*(\d{2})?/i)
-  if (matchH) {
-    const h = String(matchH[1]).padStart(2, '0')
-    const m = matchH[2] ? String(matchH[2]).padStart(2, '0') : '00'
-    tm = `${h}:${m}`
-  }
-
-  return {
-    departure: dep,
-    destination: dest,
-    date: dt,
-    time: tm
   }
 }
 
-
-/* =========================================================
-   INITIALISATION DU MICRO
-========================================================= */
-
-const initializeRecognition = () => {
-
-  const SpeechRecognition =
-    getSpeechRecognition()
-
-  if (!SpeechRecognition) {
-
-    recognitionError.value =
-      'La recherche vocale n’est pas disponible dans ce navigateur.'
-
-    return false
-  }
-
-  recognition =
-    new SpeechRecognition()
-
-  recognition.lang =
-    'fr-FR'
-
-  recognition.continuous =
-    true
-
-  recognition.interimResults =
-    true
-
-  recognition.maxAlternatives =
-    1
-
-
-  /* =====================================================
-     START
-  ================================================== */
-
-  recognition.onstart = () => {
-
-    isListening.value =
-      true
-
-    recognitionError.value =
-      ''
-  }
-
-
-  /* =====================================================
-     RESULT
-  ================================================== */
-
-  recognition.onresult =
-    (event) => {
-
-      let transcriptText =
-        ''
-
-      for (
-        let i = event.resultIndex;
-        i < event.results.length;
-        i++
-      ) {
-
-        const result =
-          event.results[i]
-
-        const spokenText =
-          result[0]?.transcript || ''
-
-        transcriptText +=
-          spokenText
-      }
-
-      const nextTranscript =
-        transcriptText.trim()
-
-      if (!nextTranscript) {
-        return
-      }
-
-      /*
-       * Affichage immédiat de la transcription.
-       */
-      transcript.value =
-        nextTranscript
-    }
-
-
-  /* =====================================================
-     END
-  ================================================== */
-
-  recognition.onend = () => {
-
-    isListening.value =
-      false
-
-    /*
-     * Une fois que l'utilisateur a terminé de parler,
-     * on envoie la transcription complète au service IA.
-     */
-    if (hasTranscript.value) {
-      analyzeVoiceSearch()
+const stopRecording = () => {
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    try {
+      mediaRecorder.stop()
+    } catch (e) {
+      console.warn('Erreur arrêt enregistrement:', e)
     }
   }
-
-
-  /* =====================================================
-     ERROR
-  ================================================== */
-
-  recognition.onerror =
-    (event) => {
-
-      isListening.value =
-        false
-
-      switch (event.error) {
-
-        case 'not-allowed':
-
-          recognitionError.value =
-            'L’accès au microphone a été refusé.'
-
-          break
-
-
-        case 'no-speech':
-
-          recognitionError.value =
-            'Aucune parole détectée. Réessayez.'
-
-          /*
-           * Très important :
-           * aucun critère ne doit être affiché
-           * s'il n'y a aucune parole.
-           */
-          transcript.value = ''
-
-          resetCriteria()
-
-          break
-
-
-        case 'audio-capture':
-
-          recognitionError.value =
-            'Le microphone n’est pas disponible.'
-
-          break
-
-
-        default:
-
-          recognitionError.value =
-            'Une erreur est survenue pendant la recherche vocale.'
-      }
-    }
-
-
-  return true
+  isListening.value = false
 }
 
+const toggleListening = () => {
+  if (isSearching.value || isAnalyzing.value) {
+    return
+  }
 
-/* =========================================================
-   ANALYSE IA & VÉRIFICATION DISPONIBILITÉ
-========================================================= */
+  // Option A : Clic pour démarrer, clic pour arrêter et lancer l'analyse
+  if (isListening.value) {
+    stopRecording()
+  } else {
+    startRecording()
+  }
+}
 
-const analyzeVoiceSearch = async () => {
-  if (!hasTranscript.value) {
+const reessayerAuMicro = () => {
+  noResultDetected.value = false
+  recognitionError.value = ''
+  transcript.value = ''
+  resetCriteria()
+  startRecording()
+}
+
+const traiterAudioAvecGemini = async (audioBlob) => {
+  if (!audioBlob || audioBlob.size === 0) {
+    recognitionError.value = 'Aucun son détecté. Veuillez parler dans votre microphone.'
+    noResultDetected.value = true
     return
   }
 
@@ -950,37 +749,42 @@ const analyzeVoiceSearch = async () => {
   tripsFoundCount.value = null
 
   try {
-    /*
-     * On demande au service IA d'analyser la transcription.
-     */
-    const result = await sendTranscriptToAI(transcript.value.trim())
+    const aiData = await serviceIA.transcrireAudio(audioBlob)
 
-    /*
-     * Si aucun résultat ou absence de départ et d'arrivée,
-     * on active immédiatement le feedback explicite pour l'utilisateur.
-     */
-    if (!result || (!result.departure && !result.destination)) {
+    // Affichage de la phrase comprise (en Wolof ou en Français)
+    if (aiData && aiData.transcription) {
+      transcript.value = aiData.transcription
+    }
+
+    const dep = aiData.departure || aiData.depart || ''
+    const dest = aiData.destination || aiData.arrivee || ''
+    const dateVal = aiData.date || ''
+    const timeVal = aiData.time || aiData.heure || ''
+
+    if (!dep && !dest) {
       resetCriteria()
       noResultDetected.value = true
       return
     }
 
-    criteria.departure = result.departure || ''
-    criteria.destination = result.destination || ''
-    criteria.date = result.date || ''
-    criteria.time = result.time || ''
+    criteria.departure = dep
+    criteria.destination = dest
+    criteria.date = dateVal
+    criteria.time = timeVal
 
-    if (!criteria.departure && !criteria.destination) {
-      noResultDetected.value = true
-      return
-    }
-
-    // Vérifier la disponibilité en base de données pour un feedback immédiat
+    // Vérifier immédiatement les trajets réels en base de données Django
     await verifierDisponibiliteTrajets()
-
-  } catch (error) {
-    console.error('Erreur analyse recherche vocale :', error)
-    resetCriteria()
+  } catch (err) {
+    console.error('Erreur analyse vocale Gemini:', err)
+    const detailMsg = err.response?.data?.detail
+    if (detailMsg && detailMsg.includes('GEMINI_API_KEY')) {
+      recognitionError.value =
+        'Clé API Gemini non configurée. Veuillez ajouter votre GEMINI_API_KEY dans Service_IA/.env.'
+    } else if (detailMsg) {
+      recognitionError.value = detailMsg
+    } else {
+      recognitionError.value = "Erreur lors de l'analyse vocale. Veuillez réessayer."
+    }
     noResultDetected.value = true
   } finally {
     isAnalyzing.value = false
@@ -995,9 +799,11 @@ const verifierDisponibiliteTrajets = async () => {
     if (criteria.date) filtres.date = criteria.date
 
     const data = await serviceTrajets.lister(filtres)
-    const liste = Array.isArray(data) ? data : (data.results || [])
+    const liste = Array.isArray(data) ? data : data.results || []
     const aujourdhui = new Date().toISOString().split('T')[0]
-    const dispo = liste.filter(t => (t.places_disponibles ?? 0) >= 1 && (!t.date || t.date >= aujourdhui))
+    const dispo = liste.filter(
+      (t) => (t.places_disponibles ?? 0) >= 1 && (!t.date || t.date >= aujourdhui)
+    )
     tripsFoundCount.value = dispo.length
     if (dispo.length === 0) {
       noResultDetected.value = true
@@ -1009,67 +815,6 @@ const verifierDisponibiliteTrajets = async () => {
     tripsFoundCount.value = null
   }
 }
-
-
-/* =========================================================
-   START / STOP
-========================================================= */
-
-const startListening = () => {
-  noResultDetected.value = false
-  tripsFoundCount.value = null
-  isAnalyzing.value = false
-
-  if (!recognition) {
-    const initialized = initializeRecognition()
-    if (!initialized) {
-      return
-    }
-  }
-
-  if (isListening.value) {
-    return
-  }
-
-  recognitionError.value = ''
-
-  /*
-   * Nouvelle session : on recommence avec une transcription propre.
-   */
-  transcript.value = ''
-  resetCriteria()
-
-  try {
-    recognition.start()
-  } catch (error) {
-    console.error('Erreur de démarrage :', error)
-  }
-}
-
-const stopListening = () => {
-  if (!recognition || !isListening.value) {
-    return
-  }
-
-  try {
-    recognition.stop()
-  } catch (error) {
-    console.error('Erreur d’arrêt :', error)
-  }
-}
-
-const toggleListening = () => {
-  if (isSearching.value || isAnalyzing.value) {
-    return
-  }
-
-  if (isListening.value) {
-    stopListening()
-  } else {
-    startListening()
-  }
-}
-
 
 /* =========================================================
    SEARCH & ACTIONS
@@ -1095,7 +840,7 @@ const searchTrips = async () => {
 
     router.push({
       path: '/recherche-resultats',
-      query
+      query,
     })
   } catch (error) {
     console.error('Erreur recherche :', error)
@@ -1105,60 +850,45 @@ const searchTrips = async () => {
   }
 }
 
-
 /* =========================================================
-   NAVIGATION
+   NAVIGATION & LIFECYCLE
 ========================================================= */
 
 const goBack = () => {
-
-  if (
-    window.history.length > 1
-  ) {
-
+  if (window.history.length > 1) {
     router.back()
-
     return
   }
-
-  router.push(
-    '/accueil'
-  )
+  router.push('/accueil')
 }
 
-
-/* =========================================================
-   LIFECYCLE
-========================================================= */
-
 onMounted(() => {
-
-  /*
-   * On initialise uniquement le moteur.
-   *
-   * Le microphone ne démarre PAS automatiquement.
-   */
-  initializeRecognition()
+  // Prêt pour l'écoute
 })
-
 
 onBeforeUnmount(() => {
-
-  if (
-    recognition &&
-    isListening.value
-  ) {
-
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
     try {
-
-      recognition.stop()
-
-    } catch (error) {
-
-      console.error(error)
+      mediaRecorder.stop()
+    } catch (e) {
+      // Ignorer
     }
   }
+  if (audioStream) {
+    audioStream.getTracks().forEach((track) => track.stop())
+    audioStream = null
+  }
 })
+
+/* =========================================================
+   [OBSOLÈTE / ANCIENNE LOGIQUE DE RECHERCHE VOCALE WEBSPEECH API]
+   Mise en commentaire au profit de MediaRecorder + Gemini 2.0 Flash
+========================================================= */
+/*
+const sendTranscriptToAI = async (text) => { ... }
+const initializeRecognition = () => { ... }
+const analyzeVoiceSearch = async () => { ... }
+*/
 </script>
 <style scoped>
 /* =========================================================
@@ -1795,15 +1525,15 @@ onBeforeUnmount(() => {
 
   align-items: center;
 
-  margin-top: 46px;
+  margin-top: 58px;
 
   flex: 0 0 auto;
 
   /*
-   * Descend légèrement le groupe micro.
+   * Descend harmonieusement le groupe micro.
    */
   transform:
-    translateY(7px);
+    translateY(18px);
 }
 
 .microphone-button {
@@ -1837,13 +1567,13 @@ onBeforeUnmount(() => {
   cursor: pointer;
 
   /*
-   * Ombre très légère + halo orange.
+   * Ombre très légère + halo orange adouci.
    */
   box-shadow:
-    0 0 0 8px
-      rgba(255, 77, 45, 0.038),
-    0 5px 12px
-      rgba(255, 77, 45, 0.04);
+    0 0 0 6px
+      rgba(255, 77, 45, 0.04),
+    0 5px 14px
+      rgba(255, 77, 45, 0.06);
 
   transition:
     background-color 170ms ease,
@@ -1859,10 +1589,10 @@ onBeforeUnmount(() => {
     translateY(-1px);
 
   box-shadow:
-    0 0 0 9px
-      rgba(255, 77, 45, 0.042),
+    0 0 0 7px
+      rgba(255, 77, 45, 0.05),
     0 6px 14px
-      rgba(255, 77, 45, 0.05);
+      rgba(255, 77, 45, 0.07);
 }
 
 .microphone-button:active:not(:disabled) {
@@ -1871,10 +1601,10 @@ onBeforeUnmount(() => {
     scale(0.98);
 
   box-shadow:
-    0 0 0 7px
-      rgba(255, 77, 45, 0.032),
+    0 0 0 5px
+      rgba(255, 77, 45, 0.04),
     0 4px 9px
-      rgba(255, 77, 45, 0.049);
+      rgba(255, 77, 45, 0.05);
 }
 
 .microphone-button:focus-visible {
@@ -1919,7 +1649,7 @@ onBeforeUnmount(() => {
 
 
 /* =========================================================
-   ANNEAUX MICRO
+   ANNEAUX MICRO (DISCRETS, ADOUCIS ET RYTHME SLOW)
 ========================================================= */
 
 .mic-ring {
@@ -1932,13 +1662,25 @@ onBeforeUnmount(() => {
   height: 108px;
 
   border:
-    2px solid
+    1.5px solid
     rgba(
       255,
       77,
       45,
-      0.18
+      0.32
     );
+
+  background:
+    radial-gradient(
+      circle,
+      rgba(255, 77, 45, 0.08) 0%,
+      rgba(255, 77, 45, 0.015) 65%,
+      transparent 100%
+    );
+
+  box-shadow:
+    0 0 8px
+    rgba(255, 77, 45, 0.12);
 
   border-radius: 50%;
 
@@ -1952,19 +1694,19 @@ onBeforeUnmount(() => {
 
   animation:
     mic-ring-pulse
-    1.9s
-    ease-out
+    3.2s
+    cubic-bezier(0.25, 0.1, 0.25, 1)
     infinite;
 }
 
 .mic-ring--two {
   animation-delay:
-    620ms;
+    1050ms;
 }
 
 .mic-ring--three {
   animation-delay:
-    1240ms;
+    2100ms;
 }
 
 .microphone-hint {
@@ -1992,15 +1734,14 @@ onBeforeUnmount(() => {
   width: 100%;
 
   /*
-   * Le bouton descend légèrement,
-   * mais reste dans le groupe central.
+   * Le bouton descend plus bas vers le bas de page.
    */
-  margin-top: 43px;
+  margin-top: 58px;
 
   flex: 0 0 auto;
 
   transform:
-    translateY(9px);
+    translateY(24px);
 }
 
 .search-button {
@@ -2202,24 +1943,26 @@ onBeforeUnmount(() => {
   border-color: rgba(234, 88, 12, 0.25);
 }
 
-.analyzing-pill {
-  margin-top: 14px;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 14px;
-  background: rgba(255, 77, 45, 0.08);
-  border-radius: 999px;
-  color: var(--brand);
-  font-size: 13px;
-  font-weight: 700;
+.search-button--loading {
+  background: var(--black) !important;
+  color: #ffffff !important;
+  cursor: wait !important;
+  opacity: 1 !important;
+  box-shadow: 0 5px 12px rgba(17, 22, 39, 0.08) !important;
 }
 
-.analyzing-spinner {
-  width: 14px;
-  height: 14px;
-  border: 2px solid rgba(255, 77, 45, 0.25);
-  border-top-color: var(--brand);
+.search-button--loading .button-loading {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.search-button--loading .spinner {
+  width: 19px;
+  height: 19px;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #ffffff;
   border-radius: 50%;
   animation: spin 0.7s linear infinite;
 }
@@ -2276,29 +2019,21 @@ onBeforeUnmount(() => {
 
 @keyframes mic-ring-pulse {
   0% {
-    opacity: 0;
-
+    opacity: 0.6;
     transform:
-      translate(
-        -50%,
-        -50%
-      )
-      scale(0.92);
+      translate(-50%, -50%)
+      scale(1);
   }
 
-  18% {
-    opacity: 0.40;
+  40% {
+    opacity: 0.28;
   }
 
   100% {
     opacity: 0;
-
     transform:
-      translate(
-        -50%,
-        -50%
-      )
-      scale(1.48);
+      translate(-50%, -50%)
+      scale(1.38);
   }
 }
 
@@ -2420,7 +2155,7 @@ onBeforeUnmount(() => {
     padding:
       20px
       16px
-      30px;
+      48px;
 
     display: flex;
 
@@ -2664,67 +2399,97 @@ onBeforeUnmount(() => {
 
   .microphone-section {
     margin-top:
-      24px;
+      64px;
+
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    text-align: center;
 
     /*
-     * Descend un peu le micro.
+     * Descend le groupe micro pour une position idéale et centrée sur mobile.
      */
     transform:
-      translateY(9px);
+      translateY(30px);
   }
 
   .microphone-button {
     width:
-      88px;
+      92px;
     height:
-      88px;
+      92px;
+    margin:
+      0 auto;
 
     /*
-     * Halo orange visible mais très léger.
+     * Halo orange adouci et subtil
      */
     box-shadow:
-      0 0 0 7px
-        rgba(255, 77, 45, 0.038),
-      0 5px 11px
-        rgba(255, 77, 45, 0.052);
+      0 0 0 6px
+        rgba(255, 77, 45, 0.07),
+      0 6px 16px
+        rgba(255, 77, 45, 0.16);
   }
 
   .microphone-button:hover:not(:disabled) {
     box-shadow:
       0 0 0 8px
-        rgba(255, 77, 45, 0.042),
-      0 6px 13px
-        rgba(255, 77, 45, 0.05);
+        rgba(255, 77, 45, 0.09),
+      0 8px 18px
+        rgba(255, 77, 45, 0.20);
   }
 
   .microphone-button:active:not(:disabled) {
     box-shadow:
-      0 0 0 6px
-        rgba(255, 77, 45, 0.032),
-      0 4px 9px
-        rgba(255, 77, 45, 0.045);
+      0 0 0 5px
+        rgba(255, 77, 45, 0.06),
+      0 4px 10px
+        rgba(255, 77, 45, 0.14);
   }
 
   .microphone-button svg {
     width:
-      36px;
+      38px;
     height:
-      36px;
+      38px;
   }
 
   .mic-ring {
     width:
-      88px;
+      92px;
     height:
-      88px;
+      92px;
+
+    border:
+      1.5px solid
+      rgba(
+        255,
+        77,
+        45,
+        0.32
+      );
+
+    background:
+      radial-gradient(
+        circle,
+        rgba(255, 77, 45, 0.08) 0%,
+        rgba(255, 77, 45, 0.015) 65%,
+        transparent 100%
+      );
+
+    box-shadow:
+      0 0 8px
+      rgba(255, 77, 45, 0.12);
   }
 
   .microphone-hint {
     margin-top:
-      8px;
+      14px;
 
     font-size:
-      8px;
+      12.5px;
   }
 
 
@@ -2737,13 +2502,16 @@ onBeforeUnmount(() => {
       100%;
 
     /*
-     * Le bouton descend légèrement sous le micro.
+     * Le bouton est descendu beaucoup plus bas pour combler l'espace blanc du bas
      */
     margin-top:
-      28px;
+      70px;
+
+    margin-bottom:
+      36px;
 
     transform:
-      translateY(11px);
+      translateY(38px);
   }
 
   .search-button {
