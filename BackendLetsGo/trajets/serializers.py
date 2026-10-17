@@ -11,6 +11,8 @@ class TrajetSerializer(serializers.ModelSerializer):
     voiture_info = serializers.SerializerMethodField()
     voiture_details = serializers.SerializerMethodField()
     est_deja_reserve = serializers.SerializerMethodField()
+    zone_depart_nom = serializers.CharField(source='zone_depart.nom', read_only=True, default='')
+    zone_destination_nom = serializers.CharField(source='zone_destination.nom', read_only=True, default='')
 
     class Meta:
         model = Trajet
@@ -25,6 +27,8 @@ class TrajetSerializer(serializers.ModelSerializer):
             'voiture_details',
             'lieu_depart', 
             'destination', 
+            'zone_depart_nom',
+            'zone_destination_nom',
             'date', 
             'heure_depart',
             'places_disponibles', 
@@ -119,6 +123,15 @@ class TrajetSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({
                 "places_disponibles": "Le nombre de places proposées dépasse la capacité de la voiture."
             })
+
+        # 5. Calcul et sécurisation impérative du tarif par place selon la grille officielle de la plateforme
+        lieu_dep = attrs.get('lieu_depart') or (instance.lieu_depart if instance else None)
+        dest = attrs.get('destination') or (instance.destination if instance else None)
+        if lieu_dep and dest:
+            from .services_tarification import resoudre_prix_trajet
+            prix_officiel = resoudre_prix_trajet(lieu_dep, dest)
+            if prix_officiel is not None:
+                attrs['prix_par_place'] = prix_officiel
 
         return attrs
 

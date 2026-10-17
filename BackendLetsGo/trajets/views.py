@@ -126,3 +126,47 @@ class TrajetViewSet(viewsets.ModelViewSet):
         trajet.statut = Trajet.StatutTrajet.ANNULE
         trajet.save()
         return Response({"message": "Le trajet a été annulé avec succès.", "statut": trajet.statut})
+
+    @action(detail=False, methods=['get'], url_path='referentiel-zones', permission_classes=[permissions.AllowAny])
+    def referentiel_zones(self, request):
+        """
+        Retourne le référentiel complet des zones, quartiers, repères et la matrice tarifaire.
+        """
+        from .services_tarification import obtenir_referentiel_complet
+        data = obtenir_referentiel_complet()
+        return Response(data)
+
+    @action(detail=False, methods=['get'], url_path='calculer-prix', permission_classes=[permissions.AllowAny])
+    def calculer_prix(self, request):
+        """
+        Calcule le prix officiel garanti par la plateforme entre deux adresses ou repères.
+        """
+        from .services_tarification import resoudre_prix_trajet, trouver_zone_pour_lieu, REFERENTIEL_ZONES
+        depart = request.query_params.get('depart', '').strip()
+        destination = request.query_params.get('destination', '').strip()
+
+        if not depart or not destination:
+            return Response(
+                {"error": "Veuillez fournir à la fois 'depart' et 'destination'."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        code_dep = trouver_zone_pour_lieu(depart)
+        code_dest = trouver_zone_pour_lieu(destination)
+        prix = resoudre_prix_trajet(depart, destination)
+
+        zones_dict = {z["code"]: z["nom"] for z in REFERENTIEL_ZONES}
+        nom_zone_dep = zones_dict.get(code_dep, code_dep)
+        nom_zone_dest = zones_dict.get(code_dest, code_dest)
+
+        return Response({
+            "depart": depart,
+            "destination": destination,
+            "zone_depart": code_dep,
+            "zone_depart_nom": nom_zone_dep,
+            "zone_destination": code_dest,
+            "zone_destination_nom": nom_zone_dest,
+            "prix_par_place": int(prix) if prix is not None else None,
+            "prix_formate": f"{int(prix):,} FCFA".replace(",", " ") if prix is not None else "",
+            "badge_texte": f"Tarif fixé par la plateforme : {int(prix):,} FCFA / place ({code_dep} ➔ {code_dest})".replace(",", " ") if prix is not None else ""
+        })

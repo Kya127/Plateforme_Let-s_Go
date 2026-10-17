@@ -59,14 +59,33 @@
                   </div>
                   <div class="route-field-content">
                     <label for="departure">Lieu de départ</label>
-                    <input
-                      id="departure"
-                      v-model.trim="form.departure"
-                      type="text"
-                      autocomplete="street-address"
-                      placeholder="Ex. Parcelles Assainies, Dakar"
-                      required
-                    />
+                    <div class="route-select-wrapper">
+                      <select
+                        id="departure"
+                        v-model="form.departure"
+                        class="route-select-field"
+                        required
+                        @change="calculerTarifPlateforme"
+                      >
+                        <option value="" disabled>Sélectionnez un point de départ...</option>
+                        <optgroup
+                          v-for="zone in referentielZones"
+                          :key="zone.code"
+                          :label="zone.nom"
+                        >
+                          <option
+                            v-for="opt in zone.options"
+                            :key="opt.valeur"
+                            :value="opt.valeur"
+                          >
+                            {{ opt.label }}
+                          </option>
+                        </optgroup>
+                      </select>
+                      <svg class="select-chevron-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M6 9l6 6 6-6" />
+                      </svg>
+                    </div>
                   </div>
                 </div>
 
@@ -83,14 +102,33 @@
                   </div>
                   <div class="route-field-content">
                     <label for="destination">Destination</label>
-                    <input
-                      id="destination"
-                      v-model.trim="form.destination"
-                      type="text"
-                      autocomplete="street-address"
-                      placeholder="Ex. Plateau, Dakar"
-                      required
-                    />
+                    <div class="route-select-wrapper">
+                      <select
+                        id="destination"
+                        v-model="form.destination"
+                        class="route-select-field"
+                        required
+                        @change="calculerTarifPlateforme"
+                      >
+                        <option value="" disabled>Sélectionnez un point d'arrivée...</option>
+                        <optgroup
+                          v-for="zone in referentielZones"
+                          :key="zone.code"
+                          :label="zone.nom"
+                        >
+                          <option
+                            v-for="opt in zone.options"
+                            :key="opt.valeur"
+                            :value="opt.valeur"
+                          >
+                            {{ opt.label }}
+                          </option>
+                        </optgroup>
+                      </select>
+                      <svg class="select-chevron-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M6 9l6 6 6-6" />
+                      </svg>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -305,25 +343,46 @@
                   </Transition>
                 </div>
 
-                <!-- ================= PRIX ================= -->
-                <div class="detail-input-card price-field-card">
-                  <label for="price">Prix par passager</label>
-                  <div class="price-input-row">
+                <!-- ================= PRIX (VERROUILLÉ SELON GRILLE TARIFAIRE) ================= -->
+                <div class="detail-input-card price-field-card" :class="{ 'price-field-card--locked': !!tarifFixeInfo }">
+                  <div class="price-header-row">
+                    <label for="price">Prix par passager</label>
+                    <!-- <span v-if="tarifFixeInfo" class="badge-tarif-fixe">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="badge-lock-icon">
+                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                        <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                      </svg>
+                      Tarif fixé
+                    </span> -->
+                  </div>
+                  <div class="price-input-row" :class="{ 'price-input-row--readonly': !!tarifFixeInfo }">
                     <svg class="field-icon field-icon--brand" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                       <line x1="12" y1="1" x2="12" y2="23" />
                       <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
                     </svg>
                     <input
                       id="price"
-                      v-model.number="form.price"
+                      :value="form.price"
                       type="number"
-                      min="0"
-                      step="100"
-                      placeholder="5000"
+                      placeholder="Tarif officiel"
                       class="price-number-input"
+                      readonly
+                      tabindex="-1"
                       required
                     />
                     <span class="price-currency-suffix">FCFA</span>
+                  </div>
+
+                  <!-- Badge informatif sous le champ de prix -->
+                  <div v-if="tarifFixeInfo" class="info-tarif-zone">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="badge-lock-icon">
+                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                        <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                      </svg>
+                    <span>{{ tarifFixeInfo.badge_texte }}</span>
+                  </div>
+                  <div v-else class="info-tarif-placeholder">
+                    <span>Sélectionnez votre départ et arrivée pour afficher le tarif officiel</span>
                   </div>
                 </div>
               </div>
@@ -541,7 +600,8 @@ import {
   onBeforeUnmount,
   onMounted,
   reactive,
-  ref
+  ref,
+  watch
 } from 'vue'
 import PublishedOverlay from '@/components/common/PublishedOverlay.vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -593,20 +653,242 @@ const formatDateValue = (date) => {
 }
 
 /* =========================================================
+   RÉFÉRENTIEL DES ZONES & MATRICE TARIFAIRE
+========================================================= */
+const referentielZones = ref([
+  {
+    code: 'ZONE_A',
+    nom: 'Zone A : Dakar Centre, Affaires & Universités',
+    options: [
+      { valeur: 'Plateau', label: 'Plateau' },
+      { valeur: 'Médina', label: 'Médina' },
+      { valeur: 'Gueule Tapée', label: 'Gueule Tapée' },
+      { valeur: 'Fass', label: 'Fass' },
+      { valeur: 'Colobane', label: 'Colobane' },
+      { valeur: 'Fann Résidence', label: 'Fann Résidence' },
+      { valeur: 'Point E', label: 'Point E' },
+      { valeur: 'Mermoz', label: 'Mermoz' },
+      { valeur: 'Sacré-Cœur 1', label: 'Sacré-Cœur 1' },
+      { valeur: 'Sacré-Cœur 2', label: 'Sacré-Cœur 2' },
+      { valeur: 'Sacré-Cœur 3', label: 'Sacré-Cœur 3' },
+      { valeur: 'Pyrotechnie', label: 'Pyrotechnie' },
+      { valeur: 'Amitié 1', label: 'Amitié 1' },
+      { valeur: 'Amitié 2', label: 'Amitié 2' },
+      { valeur: 'Amitié 3', label: 'Amitié 3' },
+      { valeur: 'Gibraltar', label: 'Gibraltar' },
+      { valeur: 'Sandaga', label: 'Sandaga (Repère)' },
+      { valeur: 'Petersen', label: 'Petersen (Repère)' },
+      { valeur: 'Gare TER Dakar', label: 'Gare TER Dakar (Repère)' },
+      { valeur: "Place de l'Indépendance", label: "Place de l'Indépendance (Repère)" },
+      { valeur: 'Port Autonome / Embarcadère Gorée', label: 'Port Autonome / Embarcadère Gorée (Repère)' },
+      { valeur: 'Campus UCAD', label: 'Campus UCAD (Repère)' },
+      { valeur: 'ESP', label: 'ESP (Repère)' },
+      { valeur: 'Hôpital Fann', label: 'Hôpital Fann (Repère)' },
+      { valeur: 'Hôpital Principal', label: 'Hôpital Principal (Repère)' },
+      { valeur: 'Hôpital Le Dantec', label: 'Hôpital Le Dantec (Repère)' },
+      { valeur: "Place de l'Obélisque (Place de la Nation)", label: "Place de l'Obélisque (Place de la Nation) (Repère)" },
+      { valeur: 'Rond-point OMVS', label: 'Rond-point OMVS (Repère)' },
+      { valeur: 'Stèle Mermoz', label: 'Stèle Mermoz (Repère)' },
+    ]
+  },
+  {
+    code: 'ZONE_B',
+    nom: 'Zone B : Dakar Nord / Ouest & Façade Maritime',
+    options: [
+      { valeur: 'Almadies', label: 'Almadies' },
+      { valeur: 'Ngor', label: 'Ngor' },
+      { valeur: 'Ouakam', label: 'Ouakam' },
+      { valeur: 'Mamelles', label: 'Mamelles' },
+      { valeur: 'Yoff', label: 'Yoff' },
+      { valeur: 'Cité Avion', label: 'Cité Avion' },
+      { valeur: 'Cité Comico Ouakam', label: 'Cité Comico Ouakam' },
+      { valeur: 'Touba Ouakam', label: 'Touba Ouakam' },
+      { valeur: 'Yoff Tonghor', label: 'Yoff Tonghor' },
+      { valeur: 'Yoff Layène', label: 'Yoff Layène' },
+      { valeur: 'Cité BCEAO', label: 'Cité BCEAO' },
+      { valeur: 'Cité Biagui', label: 'Cité Biagui' },
+      { valeur: 'Diamalaye', label: 'Diamalaye' },
+      { valeur: 'Virage', label: 'Virage' },
+      { valeur: 'Monument de la Renaissance Africaine', label: 'Monument de la Renaissance Africaine (Repère)' },
+      { valeur: 'Phare des Mamelles', label: 'Phare des Mamelles (Repère)' },
+      { valeur: 'Ancien Aéroport Léopold Sédar Senghor (LSS)', label: 'Ancien Aéroport Léopold Sédar Senghor (LSS) (Repère)' },
+      { valeur: 'Rond-point Ngor', label: 'Rond-point Ngor (Repère)' },
+      { valeur: 'Brioche Dorée Ouakam', label: 'Brioche Dorée Ouakam (Repère)' },
+      { valeur: 'Plage des Almadies', label: 'Plage des Almadies (Repère)' },
+      { valeur: 'Plage de Yoff', label: 'Plage de Yoff (Repère)' },
+    ]
+  },
+  {
+    code: 'ZONE_C',
+    nom: 'Zone C : Banlieue Proche & Bassins Démographiques',
+    options: [
+      { valeur: 'Parcelles Assainies (Unités 1 à 26)', label: 'Parcelles Assainies (Unités 1 à 26)' },
+      { valeur: 'Grand Yoff', label: 'Grand Yoff' },
+      { valeur: 'Khar Yalla', label: 'Khar Yalla' },
+      { valeur: 'Arafat', label: 'Arafat' },
+      { valeur: 'Cité Millionnaire', label: 'Cité Millionnaire' },
+      { valeur: 'Taïba', label: 'Taïba' },
+      { valeur: 'Scat Urbam', label: 'Scat Urbam' },
+      { valeur: 'Nord Foire', label: 'Nord Foire' },
+      { valeur: 'Ouest Foire', label: 'Ouest Foire' },
+      { valeur: 'Guédiawaye (Ndiarème, Sam Notaire)', label: 'Guédiawaye (Ndiarème, Sam Notaire)' },
+      { valeur: 'Wakhinane Nimzatt', label: 'Wakhinane Nimzatt' },
+      { valeur: 'Golf Sud', label: 'Golf Sud' },
+      { valeur: 'Hamo (1 à 6)', label: 'Hamo (1 à 6)' },
+      { valeur: 'Cité Fadia', label: 'Cité Fadia' },
+      { valeur: 'Cité Gadaye', label: 'Cité Gadaye' },
+      { valeur: 'Pikine (Nord, Ouest / Icotaf, Est)', label: 'Pikine (Nord, Ouest / Icotaf, Est)' },
+      { valeur: 'Guinaw Rails', label: 'Guinaw Rails' },
+      { valeur: 'Tally Boumack', label: 'Tally Boumack' },
+      { valeur: 'Thiaroye (Gare, Mer)', label: 'Thiaroye (Gare, Mer)' },
+      { valeur: 'Rond-point Case Bi', label: 'Rond-point Case Bi (Repère)' },
+      { valeur: 'Rond-point 26 Parcelles', label: 'Rond-point 26 Parcelles (Repère)' },
+      { valeur: "Échangeur Patte d'Oie (Aliou Sow)", label: "Échangeur Patte d'Oie (Aliou Sow) (Repère)" },
+      { valeur: 'Stade Léopold Sédar Senghor', label: 'Stade Léopold Sédar Senghor (Repère)' },
+      { valeur: 'Arène Nationale', label: 'Arène Nationale (Repère)' },
+      { valeur: 'Hôpital Dalal Jamm', label: 'Hôpital Dalal Jamm (Repère)' },
+      { valeur: 'Gare TER Pikine', label: 'Gare TER Pikine (Repère)' },
+      { valeur: 'Bountou Pikine', label: 'Bountou Pikine (Repère)' },
+    ]
+  },
+  {
+    code: 'ZONE_D',
+    nom: 'Zone D : Grande Banlieue, Pôle Urbain & Plateforme Économique',
+    options: [
+      { valeur: 'Rufisque (Centre, Dangou, Thiawlène)', label: 'Rufisque (Centre, Dangou, Thiawlène)' },
+      { valeur: 'Santhiaba', label: 'Santhiaba' },
+      { valeur: 'Cité Tacko', label: 'Cité Tacko' },
+      { valeur: 'Arafat Rufisque', label: 'Arafat Rufisque' },
+      { valeur: 'Bargny (Minam, Sendou)', label: 'Bargny (Minam, Sendou)' },
+      { valeur: 'Sébikotane', label: 'Sébikotane' },
+      { valeur: 'Diamniadio', label: 'Diamniadio' },
+      { valeur: 'Keur Massar (Rond-point, Cité Ainmady)', label: 'Keur Massar (Rond-point, Cité Ainmady)' },
+      { valeur: 'Jaxaay (1 et 2)', label: 'Jaxaay (1 et 2)' },
+      { valeur: 'Parcelles Keur Massar', label: 'Parcelles Keur Massar' },
+      { valeur: 'Yène', label: 'Yène' },
+      { valeur: 'Dougar', label: 'Dougar' },
+      { valeur: 'Pôle Urbain Diamniadio', label: 'Pôle Urbain Diamniadio (Repère)' },
+      { valeur: 'Cité Ministérielle', label: 'Cité Ministérielle (Repère)' },
+      { valeur: 'CICAD', label: 'CICAD (Repère)' },
+      { valeur: 'Dakar Arena', label: 'Dakar Arena (Repère)' },
+      { valeur: 'Stade Abdoulaye Wade', label: 'Stade Abdoulaye Wade (Repère)' },
+      { valeur: 'Gares TER (Rufisque, Bargny, Diamniadio)', label: 'Gares TER (Rufisque, Bargny, Diamniadio) (Repère)' },
+      { valeur: 'Sortie Péage Keur Massar (Sortie 8)', label: 'Sortie Péage Keur Massar (Sortie 8) (Repère)' },
+      { valeur: 'Sortie Péage Rufisque (Sortie 9)', label: 'Sortie Péage Rufisque (Sortie 9) (Repère)' },
+      { valeur: 'Sortie Péage Diamniadio (Sortie 10)', label: 'Sortie Péage Diamniadio (Sortie 10) (Repère)' },
+    ]
+  },
+  {
+    code: 'ZONE_E',
+    nom: 'Zone E : Petite Côte & Pôle Balnéaire',
+    options: [
+      { valeur: 'Saly Portudal', label: 'Saly Portudal' },
+      { valeur: 'Saly Carrefour', label: 'Saly Carrefour' },
+      { valeur: 'Saly Niakhniakhal', label: 'Saly Niakhniakhal' },
+      { valeur: 'Saly Joseph', label: 'Saly Joseph' },
+      { valeur: 'Saly Golf', label: 'Saly Golf' },
+      { valeur: 'Saly Bambara', label: 'Saly Bambara' },
+      { valeur: 'Mbour (Centre, Tefess, Oncad)', label: 'Mbour (Centre, Tefess, Oncad)' },
+      { valeur: 'Grand Mbour', label: 'Grand Mbour' },
+      { valeur: 'Santessou', label: 'Santessou' },
+      { valeur: 'Liberté Mbour', label: 'Liberté Mbour' },
+      { valeur: 'Somone', label: 'Somone' },
+      { valeur: 'Ngaparou', label: 'Ngaparou' },
+      { valeur: 'Popenguine', label: 'Popenguine' },
+      { valeur: 'Pointe Sarène', label: 'Pointe Sarène' },
+      { valeur: 'Diass', label: 'Diass' },
+      { valeur: 'Sindia', label: 'Sindia' },
+      { valeur: 'Aéroport International Blaise Diagne (AIBD)', label: 'Aéroport International Blaise Diagne (AIBD) (Repère)' },
+      { valeur: 'Rond-point Saly Carrefour', label: 'Rond-point Saly Carrefour (Repère)' },
+      { valeur: 'Croisement Saly / Route Ngaparou', label: 'Croisement Saly / Route Ngaparou (Repère)' },
+      { valeur: 'Garage de Mbour', label: 'Garage de Mbour (Repère)' },
+      { valeur: 'Marché Central Mbour', label: 'Marché Central Mbour (Repère)' },
+      { valeur: 'Quai de pêche Tefess', label: 'Quai de pêche Tefess (Repère)' },
+      { valeur: 'Échangeur Péage AIBD / Malicounda / Mbour', label: 'Échangeur Péage AIBD / Malicounda / Mbour (Repère)' },
+    ]
+  }
+])
+
+const matriceTarifs = ref({
+  ZONE_A: { ZONE_A: 500, ZONE_B: 800, ZONE_C: 1000, ZONE_D: 1500, ZONE_E: 3500 },
+  ZONE_B: { ZONE_A: 800, ZONE_B: 500, ZONE_C: 800, ZONE_D: 1800, ZONE_E: 4000 },
+  ZONE_C: { ZONE_A: 1000, ZONE_B: 800, ZONE_C: 500, ZONE_D: 1200, ZONE_E: 3500 },
+  ZONE_D: { ZONE_A: 1500, ZONE_B: 1800, ZONE_C: 1200, ZONE_D: 600, ZONE_E: 2500 },
+  ZONE_E: { ZONE_A: 3500, ZONE_B: 4000, ZONE_C: 3500, ZONE_D: 2500, ZONE_E: 800 },
+})
+
+const tarifFixeInfo = ref(null)
+
+const trouverZoneCode = (nomLieu) => {
+  if (!nomLieu) return ''
+  for (const z of referentielZones.value) {
+    if (z.options && z.options.some((opt) => opt.valeur === nomLieu)) {
+      return z.code
+    }
+  }
+  return ''
+}
+
+const calculerTarifPlateforme = async () => {
+  if (!form.departure || !form.destination) {
+    tarifFixeInfo.value = null
+    return
+  }
+
+  const codeDep = trouverZoneCode(form.departure)
+  const codeDest = trouverZoneCode(form.destination)
+
+  if (codeDep && codeDest && matriceTarifs.value[codeDep] && matriceTarifs.value[codeDep][codeDest] !== undefined) {
+    const prix = matriceTarifs.value[codeDep][codeDest]
+    form.price = prix
+
+    const labelDep = codeDep.replace('_', ' ')
+    const labelDest = codeDest.replace('_', ' ')
+
+    tarifFixeInfo.value = {
+      zone_dep: labelDep,
+      zone_dest: labelDest,
+      prix,
+      badge_texte: `Tarif fixé par la plateforme : ${prix.toLocaleString('fr-FR')} FCFA / place (${labelDep} ➔ ${labelDest})`
+    }
+  } else {
+    // Calcul de secours via l'API backend
+    try {
+      const res = await serviceTrajets.calculerPrix(form.departure, form.destination)
+      if (res && res.prix_par_place) {
+        form.price = res.prix_par_place
+        tarifFixeInfo.value = {
+          zone_dep: res.zone_depart,
+          zone_dest: res.zone_destination,
+          prix: res.prix_par_place,
+          badge_texte: res.badge_texte
+        }
+      }
+    } catch (e) {
+      console.warn('Erreur calcul tarif via API :', e)
+    }
+  }
+}
+
+/* =========================================================
    FORM REACTIVE DATA
 ========================================================= */
 const form = reactive({
-  departure: 'Dakar, Sacré-coeur',
-  destination: 'Dakar, Plateau',
+  departure: 'Plateau',
+  destination: 'Almadies',
   date: formatDateValue(today),
   time: '08:30',
   seats: 3,
-  price: 5000,
+  price: 800,
   description: '',
   preferences: ['no-smoking', 'pets']
 })
 
 const isSubmitting = ref(false)
+
+watch([() => form.departure, () => form.destination], () => {
+  calculerTarifPlateforme()
+})
 
 /* =========================================================
    OPTIONS & VALIDATION
@@ -866,6 +1148,19 @@ const handleOutsideClick = (event) => {
 onMounted(async () => {
   document.addEventListener('click', handleOutsideClick)
 
+  // Charger le référentiel des zones et la matrice depuis l'API si disponible
+  try {
+    const dataRef = await serviceTrajets.getReferentielZones()
+    if (dataRef && dataRef.zones && dataRef.zones.length > 0) {
+      referentielZones.value = dataRef.zones
+    }
+    if (dataRef && dataRef.matrice) {
+      matriceTarifs.value = dataRef.matrice
+    }
+  } catch (err) {
+    console.warn('Utilisation du référentiel local de zones :', err)
+  }
+
   // Si on est en mode édition d'un trajet existant
   if (isEditMode.value && editTripId.value) {
     try {
@@ -892,6 +1187,9 @@ onMounted(async () => {
       publishError.value = "Impossible de charger les données du trajet."
     }
   }
+
+  // Calcul du tarif plateforme pour l'itinéraire initial
+  calculerTarifPlateforme()
 })
 
 onBeforeUnmount(() => {
@@ -1236,6 +1534,66 @@ const goToTrip = () => {
   font-weight: 400;
 }
 
+.route-select-wrapper {
+  position: relative;
+  width: 100%;
+  display: flex;
+  align-items: center;
+}
+
+.route-select-field {
+  width: 100%;
+  height: 48px;
+  padding: 0 36px 0 14px;
+  border-radius: 12px;
+  border: 1.5px solid #E2E8F0;
+  background: #F8FAFC;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #111625;
+  outline: none;
+  transition: all 0.15s ease;
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+}
+
+.route-select-field:focus {
+  border-color: #FF4D2D;
+  background: #FFFFFF;
+  box-shadow: 0 0 0 3px rgba(255, 77, 45, 0.08);
+}
+
+.route-select-field optgroup {
+  font-weight: 800;
+  color: #FF4D2D;
+  background: #FFFBF9;
+  padding: 8px 4px 4px;
+  font-size: 12.5px;
+}
+
+.route-select-field option {
+  font-weight: 500;
+  color: #1E293B;
+  background: #FFFFFF;
+  padding: 6px 10px;
+  font-size: 13px;
+}
+
+.select-chevron-icon {
+  position: absolute;
+  right: 14px;
+  width: 16px;
+  height: 16px;
+  color: #94A3B8;
+  pointer-events: none;
+  transition: color 0.15s ease;
+}
+
+.route-select-field:focus + .select-chevron-icon {
+  color: #FF4D2D;
+}
+
 /* =========================================================
    2. DETAILS GRID (DATE, HEURE, PLACES, PRIX)
 ========================================================= */
@@ -1364,6 +1722,34 @@ const goToTrip = () => {
   align-items: center;
 }
 
+/* Price Header & Badge Tarif Fixe */
+.price-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.badge-tarif-fixe {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  background: #FFF1EE;
+  color: #FF4D2D;
+  border: 1px solid rgba(255, 77, 45, 0.2);
+}
+
+.badge-lock-icon {
+  width: 11px;
+  height: 11px;
+}
+
 /* Price Input */
 .price-input-row {
   height: 48px;
@@ -1383,6 +1769,18 @@ const goToTrip = () => {
   box-shadow: 0 0 0 3px rgba(255, 77, 45, 0.04);
 }
 
+.price-input-row--readonly {
+  background: #F1F5F9;
+  border-color: #CBD5E1;
+  cursor: not-allowed;
+}
+
+.price-input-row--readonly:focus-within {
+  border-color: #CBD5E1;
+  box-shadow: none;
+  background: #F1F5F9;
+}
+
 .price-number-input {
   flex: 1;
   border: none;
@@ -1394,11 +1792,48 @@ const goToTrip = () => {
   width: 100%;
 }
 
+.price-number-input[readonly] {
+  cursor: not-allowed;
+  color: #334155;
+  user-select: none;
+}
+
 .price-currency-suffix {
   font-size: 11px;
   font-weight: 800;
   color: #64748B;
   letter-spacing: 0.5px;
+}
+
+/* Info tarif zone */
+.info-tarif-zone {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #0F766E;
+  background: #F0FDFA;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid #CCFBF1;
+  line-height: 1.35;
+}
+
+.info-tarif-zone svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  margin-top: 1px;
+  stroke: #0F766E;
+}
+
+.info-tarif-placeholder {
+  margin-top: 6px;
+  font-size: 11px;
+  color: #94A3B8;
+  font-style: italic;
 }
 
 /* =========================================================

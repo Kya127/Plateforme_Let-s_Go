@@ -275,6 +275,20 @@ export const serviceTrajets = {
     const response = await apiBackend.patch(`trajets/trajets/${id}/annuler/`)
     return response.data
   },
+
+  // Référentiel des zones et matrice tarifaire officielle
+  async getReferentielZones() {
+    const response = await apiBackend.get('trajets/trajets/referentiel-zones/')
+    return response.data
+  },
+
+  // Calculer le prix officiel garanti
+  async calculerPrix(depart, destination) {
+    const response = await apiBackend.get('trajets/trajets/calculer-prix/', {
+      params: { depart, destination },
+    })
+    return response.data
+  },
 }
 
 // 3. Réservations
