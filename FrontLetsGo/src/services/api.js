@@ -289,6 +289,18 @@ export const serviceTrajets = {
     })
     return response.data
   },
+
+  // Mettre à jour la position GPS en direct du conducteur
+  async mettreAJourPosition(id, positionData) {
+    const response = await apiBackend.post(`trajets/trajets/${id}/mettre-a-jour-position/`, positionData)
+    return response.data
+  },
+
+  // Obtenir la télémétrie et le suivi en direct du trajet (pour le passager)
+  async getSuiviDirect(id) {
+    const response = await apiBackend.get(`trajets/trajets/${id}/suivi-en-direct/`)
+    return response.data
+  },
 }
 
 // 3. Réservations
@@ -330,6 +342,12 @@ export const serviceEvaluations = {
   // Lister les avis
   async lister(filtres = {}) {
     const response = await apiBackend.get('avis/evaluations/', { params: filtres })
+    return response.data
+  },
+
+  // Vérifier si un trajet a déjà été évalué par l'utilisateur connecté
+  async verifier(trajetId) {
+    const response = await apiBackend.get('avis/evaluations/verifier/', { params: { trajet: trajetId } })
     return response.data
   },
 }

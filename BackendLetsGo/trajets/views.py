@@ -83,8 +83,10 @@ class TrajetViewSet(viewsets.ModelViewSet):
             )
 
         trajet.statut = Trajet.StatutTrajet.EN_COURS
+        trajet.tracking_actif = True
+        trajet.derniere_position_at = timezone.now()
         trajet.save()
-        return Response({"message": "Trajet démarré avec succès.", "statut": trajet.statut})
+        return Response({"message": "Trajet démarré avec succès.", "statut": trajet.statut, "tracking_actif": True})
 
     @action(detail=True, methods=['patch', 'post'], permission_classes=[permissions.IsAuthenticated])
     def terminer(self, request, pk=None):
@@ -100,8 +102,59 @@ class TrajetViewSet(viewsets.ModelViewSet):
             )
 
         trajet.statut = Trajet.StatutTrajet.TERMINE
+        trajet.tracking_actif = False
         trajet.save()
-        return Response({"message": "Trajet terminé avec succès.", "statut": trajet.statut})
+        return Response({"message": "Trajet terminé avec succès.", "statut": trajet.statut, "tracking_actif": False})
+
+    @action(detail=True, methods=['post'], url_path='mettre-a-jour-position', permission_classes=[permissions.IsAuthenticated])
+    def mettre_a_jour_position(self, request, pk=None):
+        trajet = self.get_object()
+
+        if trajet.conducteur != request.user:
+            return Response({"detail": "Non autorisé."}, status=status.HTTP_403_FORBIDDEN)
+
+        if trajet.statut != Trajet.StatutTrajet.EN_COURS:
+            return Response(
+                {"error": "Le tracking n'est disponible que pour un trajet en cours."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            lat = float(request.data.get('latitude'))
+            lng = float(request.data.get('longitude'))
+        except (TypeError, ValueError):
+            return Response(
+                {"error": "Latitude et longitude valides requises."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        trajet.latitude_actuelle = lat
+        trajet.longitude_actuelle = lng
+        if request.data.get('cap') is not None:
+            try:
+                trajet.cap_actuel = float(request.data.get('cap'))
+            except (TypeError, ValueError):
+                pass
+        if request.data.get('vitesse') is not None:
+            try:
+                trajet.vitesse_actuelle = float(request.data.get('vitesse'))
+            except (TypeError, ValueError):
+                pass
+
+        trajet.tracking_actif = True
+        trajet.derniere_position_at = timezone.now()
+        trajet.save()
+
+        from .services_tracking import calculer_eta_trajet
+        telemetrie = calculer_eta_trajet(trajet)
+        return Response(telemetrie, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['get'], url_path='suivi-en-direct', permission_classes=[permissions.AllowAny])
+    def suivi_en_direct(self, request, pk=None):
+        trajet = self.get_object()
+        from .services_tracking import calculer_eta_trajet
+        telemetrie = calculer_eta_trajet(trajet)
+        return Response(telemetrie, status=status.HTTP_200_OK)
 
 
 

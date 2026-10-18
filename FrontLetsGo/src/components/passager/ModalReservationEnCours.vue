@@ -52,126 +52,142 @@
         @click.self="fermerModal"
       >
         <div class="modal-bottom-sheet">
-          <!-- Barre / Poignée de glissement -->
-          <div class="poignee-glissement" @click="fermerModal"></div>
+          <!-- Carte Géographique & Suivi en Direct (En haut de la fiche) -->
+          <CarteSuiviDirect
+            v-if="reservation.trajetId"
+            :trajet-id="reservation.trajetId"
+            :lieu-depart="reservation.depart"
+            :destination="reservation.arrivee"
+            :heure-depart="reservation.heureDepart"
+            :statut="statutActuel"
+            @fermer="fermerModal"
+            @eta-change="onEtaChange"
+            @termine="onTrajetTermine"
+          />
 
-          <!-- En-tête : Titre, Date & Badge Confirmée -->
-          <div class="entete-modal">
-            <div class="titre-et-date">
-              <h2 class="titre-details">Détails du trajet</h2>
-              <span class="date-details">{{ reservation.dateComplete }}</span>
+          <!-- Corps du modal déroulant avec toutes les informations existantes rigoureusement préservées -->
+          <div class="modal-corps-details">
+            <!-- Barre / Poignée de glissement -->
+            <div class="poignee-glissement" @click="fermerModal"></div>
+
+            <!-- En-tête : Titre, Date & Badge Confirmée -->
+            <div class="entete-modal">
+              <div class="titre-et-date">
+                <h2 class="titre-details">Détails du trajet</h2>
+                <span class="date-details">{{ reservation.dateComplete }}</span>
+              </div>
+              <span class="badge-confirmee-grand">CONFIRMÉE</span>
             </div>
-            <span class="badge-confirmee-grand">CONFIRMÉE</span>
-          </div>
 
-          <!-- Section Itinéraire avec points et ligne pointillée -->
-          <div class="itineraire-timeline">
-            <!-- Point Départ -->
-            <div class="timeline-point">
-              <span class="pastille-point pastille-noire" aria-hidden="true"></span>
-              <div class="timeline-texte">
-                <span class="timeline-label">DÉPART</span>
-                <span class="timeline-ville">{{ reservation.depart }}</span>
+            <!-- Section Itinéraire avec points et ligne pointillée -->
+            <div class="itineraire-timeline">
+              <!-- Point Départ -->
+              <div class="timeline-point">
+                <span class="pastille-point pastille-noire" aria-hidden="true"></span>
+                <div class="timeline-texte">
+                  <span class="timeline-label">DÉPART</span>
+                  <span class="timeline-ville">{{ reservation.depart }}</span>
+                </div>
+              </div>
+
+              <!-- Ligne de liaison pointillée -->
+              <div class="timeline-ligne-wrapper">
+                <div class="timeline-ligne-pointillee"></div>
+              </div>
+
+              <!-- Point Arrivée -->
+              <div class="timeline-point">
+                <span class="pastille-point pastille-orange" aria-hidden="true"></span>
+                <div class="timeline-texte">
+                  <span class="timeline-label">ARRIVÉE</span>
+                  <span class="timeline-ville">{{ reservation.arriveeDetail }}</span>
+                </div>
               </div>
             </div>
 
-            <!-- Ligne de liaison pointillée -->
-            <div class="timeline-ligne-wrapper">
-              <div class="timeline-ligne-pointillee"></div>
-            </div>
+            <!-- Ligne de séparation fine -->
+            <div class="separateur-horizontal"></div>
 
-            <!-- Point Arrivée -->
-            <div class="timeline-point">
-              <span class="pastille-point pastille-orange" aria-hidden="true"></span>
-              <div class="timeline-texte">
-                <span class="timeline-label">ARRIVÉE</span>
-                <span class="timeline-ville">{{ reservation.arriveeDetail }}</span>
+            <!-- Section Conducteur -->
+            <div class="conducteur-section">
+              <div class="avatar-avec-note">
+                <img
+                  :src="reservation.conducteur.photo"
+                  :alt="`Photo de ${reservation.conducteur.nom}`"
+                  class="avatar-conducteur"
+                  @error="onImageError"
+                />
+                <div class="note-badge">
+                  <svg viewBox="0 0 24 24" width="11" height="11" fill="#F59E0B">
+                    <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+                  </svg>
+                  <span>{{ reservation.conducteur.note }}</span>
+                </div>
+              </div>
+
+              <div class="conducteur-details">
+                <h3 class="nom-conducteur">{{ reservation.conducteur.nom }}</h3>
+                <span class="voiture-conducteur">{{ reservation.conducteur.voiture }}</span>
+                <span class="immatriculation-badge">{{ reservation.conducteur.plaque }}</span>
               </div>
             </div>
-          </div>
 
-          <!-- Ligne de séparation fine -->
-          <div class="separateur-horizontal"></div>
+            <!-- Grille des Cartes Résumé (Passagers et Prix par place) -->
+            <div class="grille-resume-cartes">
+              <!-- Passagers -->
+              <div class="carte-info-resume">
+                <span class="label-info-resume">PASSAGERS</span>
+                <div class="valeur-info-resume">
+                  <span class="icone-accent-rouge">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="#FF4820">
+                      <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+                    </svg>
+                  </span>
+                  <span class="texte-gras-resume">{{ reservation.passagers }}</span>
+                </div>
+              </div>
 
-          <!-- Section Conducteur -->
-          <div class="conducteur-section">
-            <div class="avatar-avec-note">
-              <img
-                :src="reservation.conducteur.photo"
-                :alt="`Photo de ${reservation.conducteur.nom}`"
-                class="avatar-conducteur"
-                @error="onImageError"
-              />
-              <div class="note-badge">
-                <svg viewBox="0 0 24 24" width="11" height="11" fill="#F59E0B">
-                  <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+              <!-- Prix par place -->
+              <div class="carte-info-resume">
+                <span class="label-info-resume">PRIX PAR PLACE</span>
+                <div class="valeur-info-resume">
+                  <span class="icone-accent-vert">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="#10B981">
+                      <path d="M21 18v1c0 1.1-.9 2-2 2H5c-1.11 0-2-.9-2-2V5c0-1.1.89-2 2-2h14c1.1 0 2 .9 2 2v1h-9c-1.11 0-2 .9-2 2v8c0 1.1.89 2 2 2h9zm-9-2h10V8H12v8zm4-2.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/>
+                    </svg>
+                  </span>
+                  <span class="texte-gras-resume">{{ formatPrix(reservation.prixParPlace || reservation.prixTotal) }} FCFA</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Boutons d'Action -->
+            <div class="actions-modal-groupe">
+              <!-- Bouton Contacter le conducteur -->
+              <button
+                type="button"
+                class="bouton-contacter"
+                @click="contacterConducteur"
+              >
+                <span>Contacter le conducteur</span>
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+                  <path d="M20.01 15.38c-1.23 0-2.42-.2-3.53-.56a.977.977 0 0 0-1.01.24l-2.2 2.2a15.053 15.053 0 0 1-6.59-6.59l2.2-2.21a.96.96 0 0 0 .25-1.01A11.36 11.36 0 0 1 8.57 3.9c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1 0 9.39 7.61 17 17 17 .55 0 1-.45 1-1v-3.52c0-.55-.45-1-.99-1z"/>
                 </svg>
-                <span>{{ reservation.conducteur.note }}</span>
-              </div>
+              </button>
+
+              <!-- Bouton Annuler la réservation -->
+              <button
+                type="button"
+                class="bouton-annuler"
+                @click="ouvrirConfirmationAnnulation"
+              >
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18"></line>
+                  <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+                <span>Annuler la réservation</span>
+              </button>
             </div>
-
-            <div class="conducteur-details">
-              <h3 class="nom-conducteur">{{ reservation.conducteur.nom }}</h3>
-              <span class="voiture-conducteur">{{ reservation.conducteur.voiture }}</span>
-              <span class="immatriculation-badge">{{ reservation.conducteur.plaque }}</span>
-            </div>
-          </div>
-
-          <!-- Grille des 2 Cartes Résumé (Passagers & Prix Total) -->
-          <div class="grille-resume-cartes">
-            <!-- Passagers -->
-            <div class="carte-info-resume">
-              <span class="label-info-resume">PASSAGERS</span>
-              <div class="valeur-info-resume">
-                <span class="icone-accent-rouge">
-                  <svg viewBox="0 0 24 24" width="16" height="16" fill="#FF4820">
-                    <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
-                  </svg>
-                </span>
-                <span class="texte-gras-resume">{{ reservation.passagers }}</span>
-              </div>
-            </div>
-
-            <!-- Prix Total -->
-            <div class="carte-info-resume">
-              <span class="label-info-resume">PRIX TOTAL</span>
-              <div class="valeur-info-resume">
-                <span class="icone-accent-vert">
-                  <svg viewBox="0 0 24 24" width="16" height="16" fill="#10B981">
-                    <path d="M21 18v1c0 1.1-.9 2-2 2H5c-1.11 0-2-.9-2-2V5c0-1.1.89-2 2-2h14c1.1 0 2 .9 2 2v1h-9c-1.11 0-2 .9-2 2v8c0 1.1.89 2 2 2h9zm-9-2h10V8H12v8zm4-2.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/>
-                  </svg>
-                </span>
-                <span class="texte-gras-resume">{{ formatPrix(reservation.prixTotal) }} FCFA</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- Boutons d'Action -->
-          <div class="actions-modal-groupe">
-            <!-- Bouton Contacter le conducteur -->
-            <button
-              type="button"
-              class="bouton-contacter"
-              @click="contacterConducteur"
-            >
-              <span>Contacter le conducteur</span>
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
-                <path d="M20.01 15.38c-1.23 0-2.42-.2-3.53-.56a.977.977 0 0 0-1.01.24l-2.2 2.2a15.053 15.053 0 0 1-6.59-6.59l2.2-2.21a.96.96 0 0 0 .25-1.01A11.36 11.36 0 0 1 8.57 3.9c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1 0 9.39 7.61 17 17 17 .55 0 1-.45 1-1v-3.52c0-.55-.45-1-.99-1z"/>
-              </svg>
-            </button>
-
-            <!-- Bouton Annuler la réservation -->
-            <button
-              type="button"
-              class="bouton-annuler"
-              @click="ouvrirConfirmationAnnulation"
-            >
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                <line x1="18" y1="6" x2="6" y2="18"></line>
-                <line x1="6" y1="6" x2="18" y2="18"></line>
-              </svg>
-              <span>Annuler la réservation</span>
-            </button>
           </div>
         </div>
       </div>
@@ -199,6 +215,7 @@ import { ref, computed } from 'vue'
 import { serviceReservations } from '@/services/api'
 import { getAvatarUrl } from '@/utils/avatar'
 import ModalConfirmation from '@/components/common/ModalConfirmation.vue'
+import CarteSuiviDirect from '@/components/passager/CarteSuiviDirect.vue'
 
 const props = defineProps({
   reservationData: {
@@ -207,13 +224,31 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['annule'])
+const emit = defineEmits(['annule', 'termine'])
 
 const modalOuvert = ref(false)
 const afficherModalConfirmation = ref(false)
+const etaInfo = ref(null)
+
+const onEtaChange = (info) => {
+  etaInfo.value = info
+  if (info?.statut === 'TERMINE') {
+    modalOuvert.value = false
+    emit('termine', { trajetId: reservation.value.trajetId })
+  }
+}
+
+const onTrajetTermine = (info) => {
+  modalOuvert.value = false
+  emit('termine', { trajetId: info?.trajetId || reservation.value.trajetId })
+}
 
 const estVisible = computed(() => {
   return !!props.reservationData && !!props.reservationData.id
+})
+
+const statutActuel = computed(() => {
+  return etaInfo.value?.statut || reservation.value.statutTrajet || 'PLANIFIE'
 })
 
 const reservation = computed(() => {
@@ -221,11 +256,15 @@ const reservation = computed(() => {
   const data = props.reservationData
   return {
     id: data.id,
+    trajetId: data.trajetId || data.trajet_id || data.trajet || data.trajet_details?.id,
+    statutTrajet: data.statutTrajet || data.trajet_details?.statut || 'PLANIFIE',
+    heureDepart: data.heureDepart || (data.trajet_details?.heure_depart ? data.trajet_details.heure_depart.substring(0, 5) : (data.dateComplete?.includes(' à ') ? data.dateComplete.split(' à ')[1] : '08:30')),
     depart: data.depart || 'Dakar',
     arrivee: data.arrivee || 'Destination',
     arriveeDetail: data.arriveeDetail || data.arrivee || 'Destination',
     dateComplete: data.dateComplete || 'Aujourd’hui',
     passagers: data.passagers || `${data.nombre_de_places || 1} Place`,
+    prixParPlace: data.prixParPlace || Number(data.trajet_details?.prix_par_place || (data.nombre_de_places ? Math.round(data.prixTotal / data.nombre_de_places) : data.prixTotal) || 0),
     prixTotal: data.prixTotal || 0,
     conducteur: {
       nom: data.conducteur?.nom || 'Conducteur Let\'s Go',
@@ -427,15 +466,29 @@ defineExpose({
   max-width: 440px;
   background-color: #ffffff;
   border-radius: 36px 36px 0 0;
-  padding: 14px 22px 34px;
+  padding: 0;
   box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.09);
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
   animation: glisserVersHaut 0.32s cubic-bezier(0.16, 1, 0.3, 1);
-  max-height: 90vh;
-  max-height: 90dvh;
+  max-height: 92vh;
+  max-height: 92dvh;
   overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.modal-corps-details {
+  padding: 14px 22px 34px;
+  display: flex;
+  flex-direction: column;
+  background: #ffffff;
+  border-top-left-radius: 28px;
+  border-top-right-radius: 28px;
+  margin-top: -20px;
+  position: relative;
+  z-index: 10;
+  box-shadow: 0 -4px 18px rgba(0, 0, 0, 0.04);
 }
 
 /* Poignée de fermeture */
@@ -629,12 +682,17 @@ defineExpose({
   margin-top: 2px;
 }
 
-/* Grille 2 Cartes Résumé */
+/* Grille Cartes Résumé */
 .grille-resume-cartes {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 12px;
   margin-bottom: 26px;
+}
+
+.grille-resume-cartes--trois {
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
 }
 
 .carte-info-resume {
@@ -645,6 +703,17 @@ defineExpose({
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+.carte-info-eta {
+  background-color: #FFF5F2;
+  border-color: #FFE4DC;
+}
+
+.icone-accent-orange {
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .label-info-resume {

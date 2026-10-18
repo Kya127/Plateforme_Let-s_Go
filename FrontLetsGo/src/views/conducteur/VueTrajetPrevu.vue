@@ -211,10 +211,16 @@ onMounted(async () => {
       console.warn('Validation commission:', e)
     }
   }
+
+  // Si le trajet est déjà en cours lors du chargement, reprendre le tracking GPS
+  if (trip.statut === 'EN_COURS') {
+    lancerTrackingGPS()
+  }
 })
 
 onBeforeUnmount(() => {
   document.removeEventListener('keydown', handleEscape)
+  arreterTrackingGPS()
 })
 
 watch(tripId, () => {
@@ -246,6 +252,73 @@ const netRevenue = computed(() => {
 })
 
 /* =========================================================
+   GÉOLOCALISATION EN DIRECT DU CONDUCTEUR
+========================================================= */
+const geoWatchId = ref(null)
+const gpsActif = ref(false)
+const dernierePositionEnvoyee = ref(null)
+
+function lancerTrackingGPS() {
+  if (!navigator.geolocation) {
+    console.warn("La géolocalisation n'est pas supportée par ce navigateur.")
+    return
+  }
+
+  if (geoWatchId.value !== null) return
+
+  gpsActif.value = true
+  let dernierEnvoi = 0
+  const INTERVALLE_ENVOI_MS = 8000 // Envoi toutes les 8 secondes
+
+  geoWatchId.value = navigator.geolocation.watchPosition(
+    async (position) => {
+      const now = Date.now()
+      if (now - dernierEnvoi < INTERVALLE_ENVOI_MS) {
+        return
+      }
+      dernierEnvoi = now
+
+      const payload = {
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
+        cap: position.coords.heading ?? 0,
+        vitesse: position.coords.speed ? Math.round(position.coords.speed * 3.6) : 0,
+      }
+
+      dernierePositionEnvoyee.value = payload
+
+      if (trip.id && trip.statut === 'EN_COURS') {
+        try {
+          await serviceTrajets.mettreAJourPosition(trip.id, payload)
+        } catch (e) {
+          console.warn('Erreur transmission GPS conducteur :', e)
+        }
+      }
+    },
+    (err) => {
+      console.warn('Erreur GPS conducteur:', err)
+      gpsActif.value = false
+      if (err.code === 1) {
+        alert("Pour que vos passagers puissent suivre votre avancée en direct sur la carte, veuillez autoriser l'accès à votre position géographique.")
+      }
+    },
+    {
+      enableHighAccuracy: true,
+      timeout: 15000,
+      maximumAge: 0,
+    }
+  )
+}
+
+function arreterTrackingGPS() {
+  if (geoWatchId.value !== null) {
+    navigator.geolocation.clearWatch(geoWatchId.value)
+    geoWatchId.value = null
+  }
+  gpsActif.value = false
+}
+
+/* =========================================================
    BASCULEMENT STATUT DU TRAJET
 ========================================================= */
 async function basculerStatutTrajet() {
@@ -264,6 +337,8 @@ async function demarrerTrajet() {
   try {
     const res = await serviceTrajets.demarrer(trip.id)
     trip.statut = res.statut || 'EN_COURS'
+    // Démarrer la géolocalisation du conducteur
+    lancerTrackingGPS()
   } catch (err) {
     console.error('Erreur au démarrage:', err)
     alert(err.response?.data?.error || 'Impossible de démarrer le trajet.')
@@ -276,6 +351,8 @@ async function terminerTrajet() {
   if (enAction.value || !trip.id) return
   enAction.value = true
   try {
+    // Arrêter immédiatement le tracking GPS
+    arreterTrackingGPS()
     const res = await serviceTrajets.terminer(trip.id)
     trip.statut = res.statut || 'TERMINE'
     router.push({

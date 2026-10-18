@@ -140,6 +140,15 @@ class Trajet(models.Model):
         default=StatutTrajet.PLANIFIE
     )
     preferences = models.JSONField(default=list, blank=True, verbose_name="Préférences du trajet")
+
+    # Télémétrie et Géolocalisation en direct
+    latitude_actuelle = models.FloatField(null=True, blank=True, verbose_name="Latitude actuelle du véhicule")
+    longitude_actuelle = models.FloatField(null=True, blank=True, verbose_name="Longitude actuelle du véhicule")
+    cap_actuel = models.FloatField(null=True, blank=True, verbose_name="Cap / Orientation (degrés)")
+    vitesse_actuelle = models.FloatField(null=True, blank=True, verbose_name="Vitesse actuelle (km/h)")
+    tracking_actif = models.BooleanField(default=False, verbose_name="Tracking en direct actif")
+    derniere_position_at = models.DateTimeField(null=True, blank=True, verbose_name="Horodatage dernière position")
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
