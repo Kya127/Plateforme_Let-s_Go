@@ -161,7 +161,7 @@
           @click="goHome"
         >
           <span>
-            Retour à l'accueil
+            Retour à l'accueil ({{ secondesRestantes }}s)
           </span>
 
           <svg
@@ -184,6 +184,7 @@
 import {
   computed,
   onMounted,
+  onBeforeUnmount,
   ref
 } from 'vue'
 
@@ -239,14 +240,31 @@ const goToDriverWall = () => {
 
 
 /* =========================================================
-   SCROLL TOP
+   SCROLL TOP & COMPTE À REBOURS REDIRECTION ACCUEIL
 ========================================================= */
+
+const secondesRestantes = ref(4)
+let timerDecompte = null
 
 onMounted(() => {
   window.scrollTo({
     top: 0,
     behavior: 'instant'
   })
+
+  timerDecompte = setInterval(() => {
+    secondesRestantes.value -= 1
+    if (secondesRestantes.value <= 0) {
+      if (timerDecompte) clearInterval(timerDecompte)
+      goHome()
+    }
+  }, 1000)
+})
+
+onBeforeUnmount(() => {
+  if (timerDecompte) {
+    clearInterval(timerDecompte)
+  }
 })
 </script>
 

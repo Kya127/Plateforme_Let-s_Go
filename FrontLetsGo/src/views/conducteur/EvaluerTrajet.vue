@@ -19,9 +19,30 @@
 
 
     <!-- =====================================================
-         MAIN
+         ÉTAT DÉJÀ ÉVALUÉ (UNE SEULE ÉVALUATION PAR TRAJET)
     ====================================================== -->
-    <main class="review-main">
+    <main v-if="dejaEvalue" class="review-main-deja-evalue">
+      <div class="carte-deja-evalue-conteneur">
+        <div class="icone-succes-deja-cercle">
+          <svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="#10B981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+            <polyline points="22 4 12 14.01 9 11.01"></polyline>
+          </svg>
+        </div>
+        <h2 class="titre-deja-evalue">Trajet déjà évalué</h2>
+        <p class="desc-deja-evalue">
+          Vous avez déjà déposé votre avis pour ce trajet. Les passagers ne peuvent évaluer qu'une seule fois par trajet.
+        </p>
+        <button type="button" class="btn-retour-accueil-deja" @click="router.push('/accueil')">
+          Retour à l'accueil
+        </button>
+      </div>
+    </main>
+
+    <!-- =====================================================
+         MAIN (FORMULAIRE D'ÉVALUATION)
+    ====================================================== -->
+    <main v-else class="review-main">
 
       <!-- ===================================================
            INTRO
@@ -451,6 +472,12 @@ const selectedCompliments =
 const isSubmitting =
   ref(false)
 
+const dejaEvalue =
+  ref(false)
+
+const verificationEnCours =
+  ref(true)
+
 let submitTimer = null
 
 
@@ -495,7 +522,27 @@ const trip = reactive({
 })
 
 onMounted(async () => {
+  window.scrollTo({
+    top: 0,
+    behavior: 'instant'
+  })
+
   if (tripId.value) {
+    // 1. Vérification stricte : le passager a-t-il déjà évalué ce trajet ?
+    try {
+      const evalCheck = await serviceEvaluations.verifier(tripId.value)
+      if (evalCheck && evalCheck.deja_evalue) {
+        dejaEvalue.value = true
+        verificationEnCours.value = false
+        return
+      }
+    } catch (e) {
+      console.warn('Vérification avis impossible:', e)
+    } finally {
+      verificationEnCours.value = false
+    }
+
+    // 2. Chargement des données du trajet
     try {
       const data = await serviceTrajets.getDetail(tripId.value)
       if (data) {
@@ -510,6 +557,8 @@ onMounted(async () => {
     } catch (err) {
       console.error('Erreur chargement trajet à évaluer:', err)
     }
+  } else {
+    verificationEnCours.value = false
   }
 })
 
@@ -623,7 +672,8 @@ const submitReview =
 
     if (
       !rating.value ||
-      isSubmitting.value
+      isSubmitting.value ||
+      dejaEvalue.value
     ) {
       return
     }
@@ -670,15 +720,12 @@ const submitReview =
         'Erreur lors de l’envoi de l’évaluation :',
         error
       )
-      router.push({
-        name: 'evaluation-confirmation',
-        query: {
-          driverName: fullDriverName.value,
-          rating: String(rating.value),
-          conducteurId: String(driverId.value || ''),
-          trajetId: String(trip.id || tripId.value)
-        }
-      })
+      const errText = error.response?.data?.error || error.response?.data?.detail
+      if (errText && (errText.includes('déjà évalué') || errText.includes('unique'))) {
+        dejaEvalue.value = true
+      } else {
+        alert(errText || 'Une erreur est survenue lors de l\'enregistrement de votre avis.')
+      }
     } finally {
       isSubmitting.value =
         false
@@ -696,22 +743,11 @@ const skipReview = () => {
     return
   }
 
+  sessionStorage.setItem(`eval_ignoree_${trip.id || tripId.value}`, 'true')
   router.push(
     '/accueil'
   )
 }
-
-
-/* =========================================================
-   CLEANUP
-========================================================= */
-
-onMounted(() => {
-  window.scrollTo({
-    top: 0,
-    behavior: 'instant'
-  })
-})
 
 
 onBeforeUnmount(() => {
@@ -2178,5 +2214,75 @@ onBeforeUnmount(() => {
   .spinner {
     animation: none !important;
   }
+}
+
+/* =========================================================
+   CARTE TRAJET DÉJÀ ÉVALUÉ
+========================================================= */
+.review-main-deja-evalue {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 60vh;
+  padding: 32px 16px;
+  box-sizing: border-box;
+}
+
+.carte-deja-evalue-conteneur {
+  background: #ffffff;
+  border-radius: 28px;
+  padding: 40px 24px;
+  text-align: center;
+  max-width: 420px;
+  width: 100%;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.05);
+  border: 1px solid #E2E8F0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+.icone-succes-deja-cercle {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: #ECFDF5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.titre-deja-evalue {
+  font-size: 22px;
+  font-weight: 800;
+  color: #111827;
+  margin: 0;
+}
+
+.desc-deja-evalue {
+  font-size: 14px;
+  color: #6B7280;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.btn-retour-accueil-deja {
+  margin-top: 10px;
+  width: 100%;
+  height: 50px;
+  border: none;
+  border-radius: 16px;
+  background: #FF4D2D;
+  color: #ffffff;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.2s;
+  font-family: inherit;
+}
+
+.btn-retour-accueil-deja:hover {
+  background: #E03E1F;
 }
 </style>
