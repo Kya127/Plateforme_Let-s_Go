@@ -2,7 +2,7 @@
 import { reactive, ref, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthentificationStore } from '@/stores/authentification'
-import { serviceTrajets, serviceReservations, serviceRecommandations } from '@/services/api'
+import { serviceTrajets, serviceReservations, serviceRecommandations, serviceEvaluations } from '@/services/api'
 import BarreNavigation from '@/components/layout/BarreNavigation.vue'
 import RechercheUnifieeDesktop from '@/components/accueil/RechercheUnifieeDesktop.vue'
 import CarteRechercheMobile from '@/components/accueil/CarteRechercheMobile.vue'
@@ -20,12 +20,12 @@ const storeAuth = useAuthentificationStore()
 const aujourdhui = new Date().toISOString().split('T')[0]
 
 /* =========================================================
-   SUGGESTIONS DYNAMIQUES DE TRAJETS (HABITUDES / POPULAIRES)
+   SUGGESTIONS DYNAMIQUES DE TRAJETS (HABITUDES / CENTRES D'INTÉRÊT)
 ========================================================= */
 const suggestionsTrajets = ref([])
 const metaSuggestions = ref({
-  type_suggestion: 'POPULAIRES',
-  tag: 'Trajets populaires du moment',
+  type_suggestion: 'HABITUDES',
+  tag: 'Vos trajets suggérés',
   description: ''
 })
 const chargementSuggestions = ref(false)
@@ -36,8 +36,8 @@ async function chargerSuggestions() {
     const data = await serviceRecommandations.getSuggestions()
     suggestionsTrajets.value = data.suggestions || []
     metaSuggestions.value = {
-      type_suggestion: data.type_suggestion || 'POPULAIRES',
-      tag: data.tag || 'Trajets populaires du moment',
+      type_suggestion: data.type_suggestion || 'HABITUDES',
+      tag: data.tag || 'Vos trajets suggérés',
       description: data.description || ''
     }
   } catch (err) {
@@ -45,23 +45,33 @@ async function chargerSuggestions() {
     suggestionsTrajets.value = []
   } finally {
     chargementSuggestions.value = false
+    appliquerDedoublonnage()
   }
 }
 
 /* =========================================================
-   TRAJETS DISPONIBLES (BDD)
+   TRAJETS DISPONIBLES (BDD) AVEC DÉDOUBLONNAGE (OPTION 2)
 ========================================================= */
+const tousLesTrajetsDisponibles = ref([])
 const trajetsDisponibles = ref([])
 const chargementTrajets = ref(false)
+
+function appliquerDedoublonnage() {
+  // Option 2 : Tout trajet déjà présent dans les suggestions est exclu des trajets disponibles
+  const idsSugg = new Set(suggestionsTrajets.value.map(t => Number(t.id)))
+  trajetsDisponibles.value = tousLesTrajetsDisponibles.value.filter(t => !idsSugg.has(Number(t.id)))
+}
 
 async function chargerTrajetsDisponibles() {
   chargementTrajets.value = true
   try {
     const data = await serviceTrajets.lister({ statut: 'PLANIFIE' })
     const liste = Array.isArray(data) ? data : (data.results || [])
-    trajetsDisponibles.value = liste.filter(t => (t.places_disponibles ?? 0) >= 1 && (!t.date || t.date >= aujourdhui))
+    tousLesTrajetsDisponibles.value = liste.filter(t => (t.places_disponibles ?? 0) >= 1 && (!t.date || t.date >= aujourdhui))
+    appliquerDedoublonnage()
   } catch (err) {
     console.warn('Erreur chargement des trajets disponibles BDD:', err)
+    tousLesTrajetsDisponibles.value = []
     trajetsDisponibles.value = []
   } finally {
     chargementTrajets.value = false
@@ -93,29 +103,35 @@ async function chargerReservationActive() {
 
     const ids = new Set()
     liste.forEach(r => {
-      if (r.statut === 'CONFIRMEE') {
+      if (r.statut === 'CONFIRMEE' && r.trajet_details?.statut !== 'ANNULE' && r.trajet_details?.statut !== 'TERMINE') {
         const tId = r.trajet || r.trajet_id || r.trajet_details?.id
         if (tId) ids.add(Number(tId))
       }
     })
     mesReservationsTrajetIds.value = ids
 
+    // 1. Recherche de réservation ACTIVE (Planifiée ou En cours)
     const active = liste.find(r => 
       r.statut === 'CONFIRMEE' && 
       r.trajet_details && 
       (!r.trajet_details.date || r.trajet_details.date >= aujourdhui) &&
-      r.trajet_details.statut !== 'ANNULE'
+      r.trajet_details.statut !== 'ANNULE' &&
+      r.trajet_details.statut !== 'TERMINE'
     )
 
     if (active && active.trajet_details) {
       const td = active.trajet_details
       reservationActive.value = {
         id: active.id,
+        trajetId: td.id || active.trajet || active.trajet_id,
+        statutTrajet: td.statut || 'PLANIFIE',
+        heureDepart: td.heure_depart ? td.heure_depart.substring(0, 5) : '08:00',
         depart: td.lieu_depart,
         arrivee: td.destination,
         arriveeDetail: td.destination,
         dateComplete: `${td.date} à ${td.heure_depart ? td.heure_depart.substring(0, 5) : '08:00'}`,
         passagers: `${active.nombre_de_places} Place${active.nombre_de_places > 1 ? 's' : ''}`,
+        prixParPlace: Number(td.prix_par_place || 0),
         prixTotal: Number(td.prix_par_place || 0) * (active.nombre_de_places || 1),
         conducteur: {
           nom: td.conducteur_nom || 'Conducteur',
@@ -128,11 +144,67 @@ async function chargerReservationActive() {
       }
     } else {
       reservationActive.value = null
+
+      // 2. Trajet TERMINÉ du jour : redirection vers l'évaluation s'il n'est pas encore évalué
+      const dernierTrajetTermine = liste.find(r => 
+        r.statut === 'CONFIRMEE' &&
+        r.trajet_details &&
+        r.trajet_details.statut === 'TERMINE' &&
+        (!r.trajet_details.date || r.trajet_details.date >= aujourdhui)
+      )
+
+      if (dernierTrajetTermine && dernierTrajetTermine.trajet_details) {
+        const tId = dernierTrajetTermine.trajet_details.id || dernierTrajetTermine.trajet || dernierTrajetTermine.trajet_id
+        const aEteIgnore = sessionStorage.getItem(`eval_ignoree_${tId}`)
+        if (!aEteIgnore) {
+          try {
+            const check = await serviceEvaluations.verifier(tId)
+            if (!check.deja_evalue) {
+              routeur.push({
+                name: 'evaluer-trajet',
+                params: { id: tId },
+                query: {
+                  trajet_id: tId,
+                  conducteur_id: dernierTrajetTermine.trajet_details.conducteur || ''
+                }
+              })
+              return
+            }
+          } catch (e) {
+            console.warn('Vérification avis impossible:', e)
+          }
+        }
+      }
     }
   } catch (err) {
     console.warn('Impossible de charger les réservations passager:', err)
     reservationActive.value = null
   }
+}
+
+async function gererFinDeTrajet(data = {}) {
+  const tId = data.trajetId || reservationActive.value?.trajetId
+  reservationActive.value = null
+  if (!tId) {
+    await chargerReservationActive()
+    return
+  }
+
+  try {
+    const check = await serviceEvaluations.verifier(tId)
+    if (!check.deja_evalue) {
+      routeur.push({
+        name: 'evaluer-trajet',
+        params: { id: tId },
+        query: { trajet_id: tId }
+      })
+      return
+    }
+  } catch (err) {
+    console.warn('Erreur lors de la redirection fin de trajet:', err)
+  }
+
+  await chargerReservationActive()
 }
 
 /* =========================================================
@@ -239,6 +311,7 @@ onMounted(() => {
 watch(() => [storeAuth.estConnecte, storeAuth.utilisateur?.estConducteurVerifie], () => {
   chargerReservationActive()
   chargerSuggestions()
+  chargerTrajetsDisponibles()
 })
 </script>
 
@@ -461,6 +534,7 @@ watch(() => [storeAuth.estConnecte, storeAuth.utilisateur?.estConducteurVerifie]
       v-if="reservationActive"
       :reservation-data="reservationActive"
       @annule="chargerReservationActive"
+      @termine="gererFinDeTrajet"
     />
   </div>
 </template>
