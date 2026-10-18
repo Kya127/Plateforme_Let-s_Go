@@ -284,12 +284,11 @@ class PublicDriverProfileView(APIView):
         else:
             avg_note = 0
 
-        # Trajets terminés
+        # Trajets publiés et terminés
         from trajets.models import Trajet
         from voitures.models import Voiture
-        nb_trajets = Trajet.objects.filter(conducteur=user, statut=Trajet.StatutTrajet.TERMINE).count()
-        if nb_trajets == 0:
-            nb_trajets = Trajet.objects.filter(conducteur=user).count()
+        nb_trajets_publies = Trajet.objects.filter(conducteur=user).count()
+        nb_trajets_termines = Trajet.objects.filter(conducteur=user, statut=Trajet.StatutTrajet.TERMINE).count()
 
         # Voiture principale
         voiture = Voiture.objects.filter(conducteur=user).first()
@@ -331,7 +330,9 @@ class PublicDriverProfileView(APIView):
             "membre_depuis": membre_depuis,
             "note_moyenne": avg_note,
             "nb_evaluations": total_evals,
-            "nb_trajets": nb_trajets,
+            "nb_trajets": nb_trajets_publies,
+            "nb_trajets_publies": nb_trajets_publies,
+            "nb_trajets_termines": nb_trajets_termines,
             "voiture": voiture_data,
             "evaluations": evals_serialized,
         }

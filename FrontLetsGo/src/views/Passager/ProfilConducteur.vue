@@ -260,7 +260,7 @@ const route = useRoute()
 
 const chargement = ref(true)
 
-const driverId = computed(() => route.params.id || 2)
+const driverId = computed(() => route.params.id || route.query.conducteur_id || route.query.driver_id || 2)
 const trajetId = computed(() => route.query.trajet_id || null)
 
 // Données réelles du conducteur issues de la BDD Django
@@ -346,6 +346,8 @@ async function chargerProfilConducteur() {
       driver.value = {
         ...driver.value,
         ...res,
+        nb_trajets: Number(res.nb_trajets ?? res.nb_trajets_publies ?? 0),
+        nb_trajets_termines: Number(res.nb_trajets_termines ?? 0),
         voiture: res.voiture || null,
         evaluations: Array.isArray(res.evaluations) ? res.evaluations : []
       }
